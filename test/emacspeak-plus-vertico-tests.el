@@ -280,6 +280,54 @@ two -- and why that object is compared with `eq' and not `equal'."
     ;; The move interrupts; typing queues behind the character's echo.
     (should (equal '(t nil) (mapcar #'cdr collected)))))
 
+;;;  Deleting input:
+
+(defmacro emacspeak-plus-vertico-test--deleting (&rest body)
+  "Run BODY collecting what the deletion helpers would have said.
+Answers `tone' for the deletion tone, (char . C) for a character spoken by
+name, and the string for anything longer, in the order spoken."
+  (declare (indent 0))
+  ;; `dtk-tone', not `dtk-tone-deletion': that is a `defsubst', so a compiled
+  ;; caller has it inlined and rebinding the name would test nothing.
+  `(let ((spoken nil))
+     (cl-letf (((symbol-function 'dtk-tone) (lambda (&rest _) (push 'tone spoken)))
+               ((symbol-function 'emacspeak-speak-this-char)
+                (lambda (char) (push (cons 'char char) spoken)))
+               ((symbol-function 'dtk-speak)
+                (lambda (text) (push (substring-no-properties text) spoken))))
+       ,@body)
+     (nreverse spoken)))
+
+(ert-deftest emacspeak-plus-vertico-test-deletion-speaks-one-character ()
+  "DEL says which character went, the way `delete-backward-char' does."
+  (should (equal '(tone (char . ?u))
+                 (emacspeak-plus-vertico-test--deleting
+                   (emacspeak-plus-vertico--speak-deletion
+                    "describe-fu" "describe-f")))))
+
+(ert-deftest emacspeak-plus-vertico-test-deletion-speaks-what-went ()
+  "More than a character is spoken as text: a word, or a path component."
+  (should (equal '(tone "function")
+                 (emacspeak-plus-vertico-test--deleting
+                   (emacspeak-plus-vertico--speak-deletion
+                    "describe-function" "describe-"))))
+  (should (equal '(tone "tmp/")
+                 (emacspeak-plus-vertico-test--deleting
+                   (emacspeak-plus-vertico--speak-deletion
+                    "/home/lex/tmp/" "/home/lex/")))))
+
+(ert-deftest emacspeak-plus-vertico-test-deletion-that-removed-nothing-is-silent ()
+  "A keystroke that deleted nothing has nothing to report."
+  (should-not (emacspeak-plus-vertico-test--deleting
+                (emacspeak-plus-vertico--speak-deletion "~/" "~/"))))
+
+(ert-deftest emacspeak-plus-vertico-test-deletion-that-rewrote-speaks-the-result ()
+  "Expanding \"~/\" before deleting rewrites the input rather than shortening
+it, so what it became is spoken."
+  (should (equal '(tone "/home/")
+                 (emacspeak-plus-vertico-test--deleting
+                   (emacspeak-plus-vertico--speak-deletion "~/" "/home/")))))
+
 ;;;  Drift:
 
 (ert-deftest emacspeak-plus-vertico-test-advised-commands-exist ()
@@ -298,7 +346,9 @@ would follow silently."
                      vertico-previous-group
                      vertico-exit
                      vertico-exit-input
-                     vertico-insert))
+                     vertico-insert
+                     vertico-directory-delete-char
+                     vertico-directory-delete-word))
     (should (commandp command))))
 
 (ert-deftest emacspeak-plus-vertico-test-observed-generic-exists ()

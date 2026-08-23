@@ -40,6 +40,8 @@
 ;; heading when it changes, and the candidate in the shortened form the
 ;; grouping leaves behind.  That is how the list reads on screen, and it keeps
 ;; a long file name off every line beneath it.
+;; @item Deleting says what went -- a character, a word, or the whole path
+;; component where that is what one keystroke removed -- then names the list.
 ;; @item A prompt opening is silent: Emacspeak is still reading the prompt, and
 ;; many prompts carry the answer in them already -- @kbd{C-x k} offers the
 ;; current buffer as its default.  The candidate it opened on is named at the
@@ -71,6 +73,7 @@
 (cl-declaim  (optimize  (safety 0) (speed 3)))
 (require 'emacspeak-preamble)
 (require 'vertico)
+(require 'vertico-directory)
 
 ;;;  Map faces to voices:
 
@@ -353,6 +356,49 @@ Called once per redisplay, and the only place this module speaks the list."
       (setq-local emacspeak-plus-vertico--spoken-by-command t)
       (emacspeak-speak-region start (point))))
   ad-return-value)
+
+;;;  Deleting input:
+
+;; DEL and M-DEL reach `vertico-directory-delete-char' and
+;; `vertico-directory-delete-word', which Emacspeak does not advise: the first
+;; calls `delete-backward-char' as a plain function, the second deletes a
+;; region.  So both say nothing.
+
+(defun emacspeak-plus-vertico--text-to-point ()
+  "Return the text typed so far, up to point."
+  (buffer-substring-no-properties (minibuffer-prompt-end) (point)))
+
+(defun emacspeak-plus-vertico--speak-deletion (before after)
+  "Speak what a deletion removed, given the input BEFORE and AFTER it.
+AFTER is a prefix of BEFORE and the remainder is what went.  Where it is not,
+`vertico-directory-up' expanded a bare \"~/\" rather than shortening the
+input, and what it became is spoken instead."
+  (cond
+   ((equal before after) nil)
+   ((string-prefix-p after before)
+    (let ((deleted (substring before (length after))))
+      (dtk-tone-deletion)
+      (if (= 1 (length deleted))
+          (emacspeak-speak-this-char (aref deleted 0))
+        (dtk-speak deleted))))
+   (t (dtk-tone-deletion) (dtk-speak after))))
+
+;; Around rather than before: what these delete cannot be known without
+;; restating Vertico's own conditions, so the text is compared either side.
+(cl-loop
+ for f in '(vertico-directory-delete-char vertico-directory-delete-word)
+ do
+ (eval
+  `(defadvice ,f (around emacspeak pre act comp)
+     "speak."
+     (cond
+      ((ems-interactive-p)
+       (let ((before (emacspeak-plus-vertico--text-to-point)))
+         ad-do-it
+         (emacspeak-plus-vertico--speak-deletion
+          before (emacspeak-plus-vertico--text-to-point))))
+      (t ad-do-it))
+     ad-return-value)))
 
 ;;;  Setup:
 
