@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 29.1 is Emacspeak's stated minimum; 30.x is what these modules are
+        # developed against.  Both are run because the gap between them is
+        # where Emacspeak was never integration-tested -- it froze in August
+        # 2024, and 30.1 shipped after that.
+        emacs-version: ['29.1', '30.1']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: purcell/setup-emacs@master
+        with:
+          version: ${{ matrix.emacs-version }}
+
+      # Cloned rather than installed: Emacspeak is on no package archive, which
+      # is also why nothing here can declare it in Package-Requires.  Pinned to
+      # the commit upstream froze at, so a module that has drifted onto a local
+      # fix fails here rather than in someone else's session.
+      - name: Check out Emacspeak
+        run: |
+          git clone --filter=blob:none https://github.com/tvraman/emacspeak.git "$HOME/emacspeak"
+          git -C "$HOME/emacspeak" checkout 7482f8e27
+
+      - name: Install package dependencies
+        run: |
+          emacs -Q --batch --eval "(progn
+            (require 'package)
+            (add-to-list 'package-archives '(\"melpa\" . \"https://melpa.org/packages/\") t)
+            (package-initialize)
+            (package-refresh-contents)
+            (dolist (p '(vertico gptel telega))
+              (unless (package-installed-p p) (package-install p))))"
+
+      - name: Byte-compile
+        run: make compile EMACSPEAK_DIR="$HOME/emacspeak"
+
+      - name: Test
+        run: make test EMACSPEAK_DIR="$HOME/emacspeak"
