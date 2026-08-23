@@ -44,10 +44,21 @@
 
 ;;;  Images shown in a buffer
 
+;; The display property is built here rather than by `insert-image', which
+;; would call `create-image' -- and that fails with "Not an image" on an Emacs
+;; built without libpng, which a bare CI runner usually is.  The resolver only
+;; ever reads the property, never renders it, so nothing is lost: what is
+;; inserted below is the shape `create-image' produces, minus the `:scale' the
+;; resolver ignores.  Skipping these instead would leave the resolver, which is
+;; the whole of this module's work, untested wherever tests actually run.
+(defun ai-describe-tests--image (&rest props)
+  "Return a string displaying an image with PROPS, as a buffer would hold it."
+  (propertize " " 'display (cons 'image props)))
+
 (ert-deftest ai-describe-test-display-property-file ()
   "An image displayed from a file resolves to that file."
   (with-temp-buffer
-    (insert-image (create-image ai-describe-tests--png) " ")
+    (insert (ai-describe-tests--image :type 'png :file ai-describe-tests--png))
     (goto-char (point-min))
     (let (result)
       (should (ai-describe-display-property-resolver
@@ -62,7 +73,7 @@
                   (insert-file-contents-literally ai-describe-tests--png))
                 (buffer-string))))
     (with-temp-buffer
-      (insert-image (create-image data 'png t) " ")
+      (insert (ai-describe-tests--image :type 'png :data data))
       (goto-char (point-min))
       (let (result)
         (should (ai-describe-display-property-resolver
