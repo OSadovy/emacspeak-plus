@@ -332,7 +332,7 @@ that is not something to hand to a third party for the sake of a slightly
 better description.  The caption is sent regardless: it is part of the
 message whose picture is being sent anyway, and the picture reveals more
 than its caption does."
-  (let* ((chat (ignore-errors (telega-msg-chat msg)))
+  (let* ((chat (ignore-errors (telega-msg-chat msg 'offline)))
          (channel (and chat (ignore-errors (telega-chat-channel-p chat))))
          (caption (plist-get (plist-get (plist-get msg :content) :caption) :text))
          (lines (delq nil
@@ -359,7 +359,8 @@ thumbnail in a chat."
           (name (format "telegram %s"
                         (or (ignore-errors
                               (ai-describe--telega-text
-                               (telega-chat-title (telega-msg-chat msg))))
+                               (telega-chat-title
+                                (telega-msg-chat msg 'offline))))
                             "image"))))
       (if (telega-file--downloaded-p file)
           (funcall callback (list :file (ai-describe--tl-path file)

@@ -287,13 +287,19 @@ sent regardless, and the picture gives away more than the caption."
     (should (string-match-p "Дякую хлопцям" context))))
 
 (ert-deftest ai-describe-test-telega-context-survives-missing-chat ()
-  "The caption is still sent when the chat cannot be looked up."
-  (let* ((msg (list :@type "message" :chat_id 0
-                    :content (list :@type "messagePhoto"
-                                   :caption (list :@type "formattedText"
-                                                  :text "Вид на город"))))
-         (context (ai-describe--telega-context msg)))
-    (should (string-match-p "Вид на город" context))))
+  "The caption is still sent when the chat cannot be looked up.
+The lookup must also stay offline: telega-server is asked synchronously,
+so a chat it does not hold would block on a round trip -- and where no
+server is running at all, as here, the assertion it fails is one
+`ignore-errors' cannot be relied on to catch."
+  (cl-letf (((symbol-function 'telega-server--send)
+             (lambda (&rest _) (error "Context must not reach the server"))))
+    (let* ((msg (list :@type "message" :chat_id 0
+                      :content (list :@type "messagePhoto"
+                                     :caption (list :@type "formattedText"
+                                                    :text "Вид на город"))))
+           (context (ai-describe--telega-context msg)))
+      (should (string-match-p "Вид на город" context)))))
 
 ;;;  The chat buffer
 
