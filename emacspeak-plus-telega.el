@@ -2946,6 +2946,34 @@ still working."
                  (const :tag "An icon and words" both))
   :group 'emacspeak-plus-telega)
 
+(defcustom emacspeak-plus-telega-incoming-detail 'full
+  "How much of a message arriving elsewhere is said.
+`terse' names the chat and who sent it and leaves the words unread, which
+is enough to decide whether to go and look.  A message in the chat being
+read is always said in full, whatever this is: its words are what you are
+sitting there for."
+  :type '(choice (const :tag "The whole message" full)
+                 (const :tag "Chat and sender only" terse))
+  :group 'emacspeak-plus-telega)
+
+;; Any icon the sound cache holds, which is any name the current theme has a
+;; file for.  `emacspeak-plus-telega-set-icon' chooses one by ear.
+
+(defcustom emacspeak-plus-telega-message-icon 'new-mail
+  "Icon for a message arriving, or nil for none."
+  :type '(choice (const :tag "No icon" nil) (symbol :tag "Icon"))
+  :group 'emacspeak-plus-telega)
+
+(defcustom emacspeak-plus-telega-mention-icon 'voice-mail
+  "Icon for an arriving message that names you, or nil for none."
+  :type '(choice (const :tag "No icon" nil) (symbol :tag "Icon"))
+  :group 'emacspeak-plus-telega)
+
+(defcustom emacspeak-plus-telega-reaction-icon 'mark-object
+  "Icon for a reaction to one of your messages, or nil for none."
+  :type '(choice (const :tag "No icon" nil) (symbol :tag "Icon"))
+  :group 'emacspeak-plus-telega)
+
 (defcustom emacspeak-plus-telega-speak-composing nil
   "How the other party typing is reported, in the chat being read.
 
@@ -2981,6 +3009,11 @@ means the answer is half a minute away rather than a moment."
     (both . "Announcing with an icon and words"))
   "The values of `emacspeak-plus-telega-incoming-style', in cycling order.")
 
+(defconst emacspeak-plus-telega--incoming-detail-states
+  '((full . "Announcing whole messages")
+    (terse . "Announcing chat and sender"))
+  "The values of `emacspeak-plus-telega-incoming-detail', in cycling order.")
+
 (defconst emacspeak-plus-telega--speak-composing-states
   '((nil . "Typing and recording not reported")
     (heartbeat . "Typing ticks, recording spoken")
@@ -3012,29 +3045,89 @@ a buffer, and every chat there is."
   (emacspeak-plus-telega--cycle 'emacspeak-plus-telega-incoming-style
                            emacspeak-plus-telega--incoming-style-states))
 
+(defun emacspeak-plus-telega-cycle-incoming-detail ()
+  "Change how much of a message arriving elsewhere is said."
+  (interactive)
+  (emacspeak-plus-telega--cycle 'emacspeak-plus-telega-incoming-detail
+                           emacspeak-plus-telega--incoming-detail-states))
+
 (defun emacspeak-plus-telega-cycle-speak-composing ()
   "Change whether the other party typing and recording is reported."
   (interactive)
   (emacspeak-plus-telega--cycle 'emacspeak-plus-telega-speak-composing
                            emacspeak-plus-telega--speak-composing-states))
 
-;; These belong in `telega-prefix-map' rather than in the chat or chat list
-;; keymaps, because what they govern is not confined to those buffers: at the
-;; wider settings a chat announces itself wherever you happen to be working,
-;; and the dial for that has to be within reach from there.  It is also the
-;; only one of telega's keymaps where a plain letter is free -- inside a chat
-;; buffer letters type the message being written.
+;; Choosing an icon by ear: each candidate is played as it is offered.
+
+(defvar vertico--index)
+(declare-function vertico--candidate "vertico" (&optional hl))
+
+(defconst emacspeak-plus-telega--icon-settings
+  '(("Message" . emacspeak-plus-telega-message-icon)
+    ("Mention" . emacspeak-plus-telega-mention-icon)
+    ("Reaction" . emacspeak-plus-telega-reaction-icon))
+  "The announcements `emacspeak-plus-telega-set-icon' offers an icon for.")
+
+(defun emacspeak-plus-telega--icon-names ()
+  "Return the icons the sound cache holds, as strings."
+  (let (names)
+    (maphash (lambda (icon _file) (push (symbol-name icon) names))
+             emacspeak-sounds-cache)
+    (sort names #'string<)))
+
+(defvar emacspeak-plus-telega--icon-heard nil
+  "Icon last played while reading an icon name.")
+
+(defun emacspeak-plus-telega--icon-candidate ()
+  "Return the icon name the completion is offering, if it is showing one.
+Vertico holds a selection of its own and is asked for it where it is
+running.  Everything else is asked what the minibuffer would complete to,
+which is what Icomplete and Fido show and what plain completion means."
+  (if (bound-and-true-p vertico--input)
+      (when (>= vertico--index 0) (vertico--candidate))
+    (car (completion-all-sorted-completions))))
+
+(defun emacspeak-plus-telega--preview-icon ()
+  "Play the icon the completion is offering, once per candidate."
+  (let ((candidate (emacspeak-plus-telega--icon-candidate)))
+    (unless (equal candidate emacspeak-plus-telega--icon-heard)
+      (setq emacspeak-plus-telega--icon-heard candidate)
+      (when candidate (emacspeak-icon (intern candidate))))))
+
+(defun emacspeak-plus-telega-set-icon ()
+  "Choose the icon for an announcement, playing the candidates."
+  (interactive)
+  (let* ((which (completing-read "Announcement: "
+                                 emacspeak-plus-telega--icon-settings
+                                 nil 'must-match))
+         (variable (cdr (assoc which emacspeak-plus-telega--icon-settings)))
+         (icon (progn
+                 (setq emacspeak-plus-telega--icon-heard nil)
+                 (minibuffer-with-setup-hook
+                     (lambda ()
+                       (add-hook 'post-command-hook
+                                 #'emacspeak-plus-telega--preview-icon nil t))
+                   (completing-read (format "%s icon: " which)
+                                    (emacspeak-plus-telega--icon-names)
+                                    nil 'must-match)))))
+    (customize-set-variable variable (intern icon))
+    (emacspeak-plus-telega--speak (format "%s icon is %s" which icon))))
+
+;; On `telega-prefix-map', so announcements can be changed from wherever you
+;; are working, and repeatable, so `repeat-mode' cycles them for easier switching.
 ;;
-;; A map of their own rather than three keys taken directly, because this is
-;; where the settings that follow will go too, and one key spent now is better
-;; than a key spent for each of them later.
-(defvar emacspeak-plus-telega-announce-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "a") #'emacspeak-plus-telega-cycle-speak-incoming)
-    (define-key map (kbd "s") #'emacspeak-plus-telega-cycle-incoming-style)
-    (define-key map (kbd "t") #'emacspeak-plus-telega-cycle-speak-composing)
-    map)
+;; Filled in place rather than by `defvar-keymap', which expands to `defvar'
+;; and would leave the keys as they were when this file is reloaded.
+(defvar emacspeak-plus-telega-announce-map (make-sparse-keymap)
   "Keymap for changing what telega announces without being asked.")
+
+(pcase-dolist (`(,key . ,command)
+               '(("a" . emacspeak-plus-telega-cycle-speak-incoming)
+                 ("s" . emacspeak-plus-telega-cycle-incoming-style)
+                 ("d" . emacspeak-plus-telega-cycle-incoming-detail)
+                 ("t" . emacspeak-plus-telega-cycle-speak-composing)))
+  (keymap-set emacspeak-plus-telega-announce-map key command)
+  (put command 'repeat-map 'emacspeak-plus-telega-announce-map))
 
 (when (boundp 'telega-prefix-map)
   (define-key telega-prefix-map (kbd "n") emacspeak-plus-telega-announce-map))
@@ -3154,52 +3247,73 @@ first."
                 msgs)
       (car msgs)))
 
-(defun emacspeak-plus-telega--arrival-text (msgs)
+(defun emacspeak-plus-telega--terse-arrival (chat msg mention)
+  "Return CHAT, and MSG's sender where naming them says anything.
+MENTION says the message names you, which is the whole of what a terse
+announcement has to carry about it."
+  (let ((title (substring-no-properties (telega-chat-title chat))))
+    (if mention
+        (format "Mention in %s" title)
+      (string-join
+       (seq-remove
+        #'string-empty-p
+        (list title
+              (or (when (emacspeak-plus-telega--name-sender-p chat msg)
+                    (when-let* ((sender (telega-msg-sender msg)))
+                      (emacspeak-plus-telega--sender-title sender)))
+                  "")))
+       ", "))))
+
+(defun emacspeak-plus-telega--arrival-text (msgs mention)
   "Return MSGS arriving as one line of speech.
-MSGS is a single message, or the members of one media album."
+MSGS is a single message, or the members of one media album.  MENTION
+says the message names you."
   (let* ((msg (emacspeak-plus-telega--album-speaker msgs))
          (chat (telega-msg-chat msg 'offline))
          ;; The chat is named when the message came from somewhere other than
          ;; where the reader is, which is the case where the words alone do
          ;; not say which of forty conversations they belong to.
          (elsewhere (not (emacspeak-plus-telega--chat-focused-p chat))))
-    (emacspeak-plus-telega--call-in-chatbuf
-     chat
-     (lambda ()
-       ;; Announcing must not tell the next `n' that this sender has already
-       ;; been heard from -- that flag belongs to reading the conversation,
-       ;; and is bound rather than set so that reading is left as it was.  It
-       ;; is bound to the sender's own name where naming them would only
-       ;; repeat the chat, which is how the summary is asked to leave it out.
-       (let ((emacspeak-plus-telega--last-sender
-              (unless (emacspeak-plus-telega--name-sender-p chat msg)
-                (when-let* ((sender (telega-msg-sender msg)))
-                  (emacspeak-plus-telega--sender-title sender)))))
-         (string-join
-          (seq-remove
-           #'string-empty-p
-           (list (if elsewhere
-                     (substring-no-properties (telega-chat-title chat))
-                   "")
-                 (if (cdr msgs)
-                     (emacspeak-plus-telega--count (length msgs) "item")
-                   "")
-                 (emacspeak-plus-telega--msg-summary msg 'arriving)))
-          ", "))))))
+    (if (and elsewhere (eq emacspeak-plus-telega-incoming-detail 'terse))
+        (emacspeak-plus-telega--terse-arrival chat msg mention)
+      (emacspeak-plus-telega--call-in-chatbuf
+       chat
+       (lambda ()
+         ;; Announcing must not tell the next `n' that this sender has already
+         ;; been heard from -- that flag belongs to reading the conversation,
+         ;; and is bound rather than set so that reading is left as it was.  It
+         ;; is bound to the sender's own name where naming them would only
+         ;; repeat the chat, which is how the summary is asked to leave it out.
+         (let ((emacspeak-plus-telega--last-sender
+                (unless (emacspeak-plus-telega--name-sender-p chat msg)
+                  (when-let* ((sender (telega-msg-sender msg)))
+                    (emacspeak-plus-telega--sender-title sender)))))
+           (string-join
+            (seq-remove
+             #'string-empty-p
+             (list (if elsewhere
+                       (substring-no-properties (telega-chat-title chat))
+                     "")
+                   (if (cdr msgs)
+                       (emacspeak-plus-telega--count (length msgs) "item")
+                     "")
+                   (emacspeak-plus-telega--msg-summary msg 'arriving)))
+            ", ")))))))
 
 (defun emacspeak-plus-telega--speak-arrival (msgs)
   "Announce MSGS having arrived."
-  (when-let* ((msg (car msgs)))
-    (emacspeak-plus-telega--announce-incoming
-     ;; Being addressed by name is a different event from a chat being busy,
-     ;; and is the one worth telling apart without waiting for the words.
-     (if (seq-some (lambda (m) (plist-get m :contains_unread_mention)) msgs)
-         'voice-mail
-       'new-mail)
-     ;; Describing a message is not free, and with only the icon asked for
-     ;; the description would be built and thrown away once per arrival.
-     (when (memq emacspeak-plus-telega-incoming-style '(speak both))
-       (emacspeak-plus-telega--arrival-text msgs)))))
+  (when msgs
+    (let ((mention (seq-some (lambda (m) (plist-get m :contains_unread_mention))
+                             msgs)))
+      (emacspeak-plus-telega--announce-incoming
+       ;; Being addressed by name is a different event from a chat being busy,
+       ;; and is the one worth telling apart without waiting for the words.
+       (if mention emacspeak-plus-telega-mention-icon
+         emacspeak-plus-telega-message-icon)
+       ;; Describing a message is not free, and with only the icon asked for
+       ;; the description would be built and thrown away once per arrival.
+       (when (memq emacspeak-plus-telega-incoming-style '(speak both))
+         (emacspeak-plus-telega--arrival-text msgs mention))))))
 
 (defun emacspeak-plus-telega--album-flush (album-id)
   "Announce the album ALBUM-ID as the one thing it was posted as."
@@ -3316,7 +3430,8 @@ MSGS is a single message, or the members of one media album."
                          (append (plist-get event :unread_reactions) nil)
                          before))
         (emacspeak-plus-telega--announce-incoming
-         'mark-object (emacspeak-plus-telega--reaction-text reaction))))))
+         emacspeak-plus-telega-reaction-icon
+         (emacspeak-plus-telega--reaction-text reaction))))))
 
 ;;;  A message being deleted
 

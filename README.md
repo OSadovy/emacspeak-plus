@@ -132,18 +132,26 @@ the same way the jump was.
 `M-g >` in a chat displaced `telega-chatbuf-read-all`, which is still on `M-g r`
 and on `r`.
 
-All eight are ordinary commands, so `M-x` reaches them if you would rather bind
+All ten are ordinary commands, so `M-x` reaches them if you would rather bind
 them yourself: `emacspeak-plus-telega-` followed by `goto-last-message`,
 `goto-first-chat`, `goto-last-chat`, `goto-replied-message`,
-`recognize-speech`, `cycle-speak-incoming`, `cycle-incoming-style` or
-`cycle-speak-composing`.
+`recognize-speech`, `cycle-speak-incoming`, `cycle-incoming-style`,
+`cycle-incoming-detail` or `cycle-speak-composing`.
 
 The announcement settings live in a prefix map of their own, hung on `n` in
 `telega-prefix-map` — telega's own prefix, which telega does not bind for you.
-If you have followed its manual and put it on `C-c t`, they are `C-c t n a`,
-`C-c t n s` and `C-c t n t`; otherwise they are `n a`, `n s` and `n t` after
-whatever prefix you chose. They cycle the three options below without leaving
-the chat.
+If you have followed its manual and put it on `C-c t`, they are `C-c t n`
+followed by:
+
+| key | what |
+|---|---|
+| `a` | which chats announce an arrival |
+| `s` | an icon, words, or both |
+| `d` | the whole message, or chat and sender |
+| `t` | whether typing is reported |
+
+All four carry a `repeat-map`, so with `repeat-mode` on the prefix is needed
+once and `a s d t` keep working until you press something else.
 
 #### Settings
 
@@ -151,11 +159,21 @@ the chat.
 |---|---|---|
 | `-speak-incoming` | `visible` | which chats announce an arrival: the one you are reading, any with a buffer, or all. Window focus and scroll position are deliberately not consulted — neither is perceivable by ear, so either one suppressing announcements would be indistinguishable from the feature being broken. Muting is Telegram's own control and follows you between devices. |
 | `-incoming-style` | `both` | an icon, words, or both |
+| `-incoming-detail` | `full` | how much of a message arriving *elsewhere* is said: the whole of it, or `terse` — the chat and who sent it, or "Mention in *chat*" where it names you. A message in the chat you are reading is always said in full, so this bites only at the wider `-speak-incoming` settings. |
+| `-message-icon` | `new-mail` | icon for an arriving message |
+| `-mention-icon` | `voice-mail` | icon for one that names you |
+| `-reaction-icon` | `mark-object` | icon for a reaction to your message |
 | `-speak-composing` | `nil` | the other party typing: off, a quiet heartbeat for as long as it lasts, or said once when it begins. Recording a voice message is announced in words under either setting — unlike typing it is not continuous, and it means the answer is half a minute away. |
 | `-chat-list-preview-length` | `180` | how much of a chat's last message to speak while walking the list. Messages read inside a chat are never truncated. |
 | `-speak-read-date` | `nil` | whether your own message being read says *when*. Telegram does not send the time with the message and asking costs a blocking round trip, felt as a stutter when walking a conversation quickly. |
 
-All are prefixed `emacspeak-plus-telega`.
+All are prefixed `emacspeak-plus-telega`. The three icons take any name the
+current sound theme has a file for, or `nil` for silence — a name it has no
+file for falls back to the button click and says nothing about it. So `M-x
+emacspeak-plus-telega-set-icon` offers the names that are loaded and plays each
+one as it offers it, letting you to pick the icon by ear. Under
+Vertico the icon you hear is the candidate you are on; under Icomplete, Fido or
+plain completion it is what your input would complete to.
 
 ### `emacspeak-plus-vertico`
 
