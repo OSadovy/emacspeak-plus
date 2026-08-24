@@ -13,7 +13,10 @@ BATCH = $(EMACS) -Q --batch \
 	--eval '(progn (require (quote package)) (package-initialize))' \
 	-L . -L $(EMACSPEAK_DIR)/lisp
 
-EL = $(wildcard *.el)
+# The autoloads and the package descriptor are written by package.el when this
+# is installed from a checkout.  They are generated, gitignored, and not ours
+# to compile or to check the docstrings of.
+EL = $(filter-out %-autoloads.el %-pkg.el, $(wildcard *.el))
 
 .PHONY: all compile test lint clean
 
