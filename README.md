@@ -191,9 +191,10 @@ Reports the [Vertico](https://github.com/minad/vertico) completion list —
   changes, and the candidate in the shortened form the grouping leaves behind.
   That is how the list reads on screen, and it keeps a long file name off every
   line beneath it.
-- A prompt opening says nothing: Emacspeak is still reading the prompt, and many
-  prompts carry the answer already — `C-x k` offers the current buffer as its
-  default. The candidate it opened on is named at the first keystroke instead.
+- A prompt opening names the candidate it opened on, once Emacspeak has read the
+  prompt out — so at `M-x` you hear what `RET` would run before pressing a key.
+  When that is unwanted it can wait for the first keystroke, or be dropped
+  entirely; see the option below.
 - Moving point through the text you have typed does not trigger candidate anouncements, even though the
   completion boundary moves with it and the candidates really do change - because I find that too chatty.
 - `M-{` and `M-}` cycle which group heads the list, and the heading you land
@@ -203,10 +204,15 @@ Reports the [Vertico](https://github.com/minad/vertico) completion list —
   input it is.
 - Moving through the list interrupts whatever is being spoken, since a candidate
   you have already moved past is not worth hearing out. Anything caused by
-  typing queues instead, behind the echo of the character that caused it.
+  typing queues instead, behind the echo of the character that caused it, and so
+  does the announcement a prompt opens with, behind the prompt.
 - Each key plays an auditory icon of its own, so a keystroke that changed
   nothing is still audible as having arrived, and Vertico's own faces — the
   selected candidate, group titles and separators — carry voices.
+
+| option | default | what it decides |
+|---|---|---|
+| `emacspeak-plus-vertico-speak-opening-candidate` | `at-prompt` | when the candidate a prompt opens on is named. `at-prompt` names it as the prompt finishes. `first-keystroke` holds it back until you type — many prompts carry the answer already, and hearing the list repeat it is not news. `nil` never names it, so a candidate is spoken only once filtering displaces it. |
 
 This one **replaces** Emacspeak's own `emacspeak-vertico`.
 

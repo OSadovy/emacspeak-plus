@@ -86,23 +86,41 @@ prompt, which is how this went wrong once already."
 
 ;;;  Reporting policy:
 
+(defvar emacspeak-plus-vertico-test--on-notify nil
+  "Non-nil while the fixture is inside a `dtk-notify-apply' call.")
+
 (defmacro emacspeak-plus-vertico-test--reporting (state &rest body)
   "Run BODY with Vertico's state stubbed from STATE, collecting speech.
-STATE supplies :candidate, :total and :input.  Answers a list of
-\(TEXT . INTERRUPTED) in the order spoken, INTERRUPTED being the value of
-`dtk-stop-immediately' at the time -- which is how a report that cuts off
-speech in progress is told from one that queues behind it.
+STATE supplies :candidate, :total, :input and :default.  Answers a list of
+\(TEXT INTERRUPTED NOTIFY) in the order spoken.  INTERRUPTED is the value
+of `dtk-stop-immediately' at the time -- which is how a report that cuts
+off speech in progress is told from one that queues behind it.  NOTIFY
+says the utterance went to the notification stream rather than to the
+speaker, which is the only way to queue behind a prompt: Emacspeak speaks
+prompts with `dtk-notify', and where that stream is a second process,
+speech sent to the speaker sounds beside the prompt instead of after it.
 
 The session state is per-buffer, so this runs in a buffer of its own rather
 than binding those variables: `setq-local' on a variable that is also
-let-bound is a warning and a trap."
+let-bound is a warning and a trap.
+
+What a prompt opening says is its own policy with its own tests below, so
+it is pinned here rather than left at its default: every test in this
+section opens a prompt before it can exercise anything, and would otherwise
+be asserting on that announcement as well."
   (declare (indent 1))
   `(with-temp-buffer
-     (let ((spoken nil))
-       (cl-letf (((symbol-function 'dtk-speak)
+     (let ((spoken nil)
+           (emacspeak-plus-vertico-speak-opening-candidate 'first-keystroke))
+       (cl-letf (((symbol-function 'dtk-notify-apply)
+                  (lambda (func text)
+                    (let ((emacspeak-plus-vertico-test--on-notify t))
+                      (funcall func text))))
+                 ((symbol-function 'dtk-speak)
                   (lambda (text)
-                    (push (cons (substring-no-properties text)
-                                dtk-stop-immediately)
+                    (push (list (substring-no-properties text)
+                                dtk-stop-immediately
+                                emacspeak-plus-vertico-test--on-notify)
                           spoken)))
                  ((symbol-function 'emacspeak-plus-vertico--annotation) #'ignore)
                  ((symbol-function 'emacspeak-plus-vertico--completion-metadata)
@@ -113,7 +131,9 @@ let-bound is a warning and a trap."
                  ((symbol-function 'emacspeak-plus-vertico--total)
                   (lambda () (plist-get ,state :total)))
                  ((symbol-function 'emacspeak-plus-vertico--input)
-                  (lambda () (plist-get ,state :input))))
+                  (lambda () (plist-get ,state :input)))
+                 ((symbol-function 'emacspeak-plus-vertico--default)
+                  (lambda () (plist-get ,state :default))))
          ,@body)
        (nreverse spoken))))
 
@@ -121,28 +141,13 @@ let-bound is a warning and a trap."
   "Return just the spoken text from COLLECTED."
   (mapcar #'car collected))
 
-(ert-deftest emacspeak-plus-vertico-test-opening-report-is-silent ()
-  "A prompt opening says nothing about the list.
-Emacspeak is still reading the prompt, and many prompts carry the answer in
-them already -- `C-x k' offers the current buffer as its default."
-  (let ((state (list :candidate "*scratch*" :total 3 :input (list ""))))
-    (should-not (emacspeak-plus-vertico-test--reporting state
-                  (emacspeak-plus-vertico--report)))))
+(defun emacspeak-plus-vertico-test--interrupts (collected)
+  "Return whether each utterance in COLLECTED cut off speech in progress."
+  (mapcar #'cadr collected))
 
-(ert-deftest emacspeak-plus-vertico-test-opening-candidate-survives-the-silence ()
-  "The candidate a prompt opens on is named at the first keystroke.
-Staying silent must not count as having named it: the command last used
-sorts to the head and stays there while its own name is typed, so recording
-it at open would mean never hearing it."
-  (let ((state (list :candidate "server-start" :total 2560 :input (list ""))))
-    (should
-     (equal '("server-start 1 of 445")
-            (emacspeak-plus-vertico-test--texts
-             (emacspeak-plus-vertico-test--reporting state
-               (emacspeak-plus-vertico--report)
-               (setq state (list :candidate "server-start" :total 445
-                                 :input (list "st")))
-               (emacspeak-plus-vertico--report)))))))
+(defun emacspeak-plus-vertico-test--streams (collected)
+  "Return whether each utterance in COLLECTED went to the notification stream."
+  (mapcar #'caddr collected))
 
 (ert-deftest emacspeak-plus-vertico-test-moving-point-is-silent ()
   "Moving through the typed text reports nothing, though the list changes.
@@ -173,13 +178,13 @@ the user stopped at."
   (let ((state (list :candidate "a.el:1:x" :total 9 :input (cons "x" 2))))
     (should
      (equal '(t)
-            (mapcar #'cdr
-                    (emacspeak-plus-vertico-test--reporting state
-                      (emacspeak-plus-vertico--report)
-                      (setq emacspeak-plus-vertico--moved t)
-                      (setq state (list :candidate "b.el:1:x" :total 9
-                                        :input (cons "x" 2)))
-                      (emacspeak-plus-vertico--report)))))))
+            (emacspeak-plus-vertico-test--interrupts
+             (emacspeak-plus-vertico-test--reporting state
+               (emacspeak-plus-vertico--report)
+               (setq emacspeak-plus-vertico--moved t)
+               (setq state (list :candidate "b.el:1:x" :total 9
+                                 :input (cons "x" 2)))
+               (emacspeak-plus-vertico--report)))))))
 
 (ert-deftest emacspeak-plus-vertico-test-command-that-spoke-is-not-echoed ()
   "A command that has already said what it did silences the next report."
@@ -278,7 +283,172 @@ two -- and why that object is compared with `eq' and not `equal'."
                      "desktop-clear 1 of 11")   ; typed
                    (emacspeak-plus-vertico-test--texts collected)))
     ;; The move interrupts; typing queues behind the character's echo.
-    (should (equal '(t nil) (mapcar #'cdr collected)))))
+    (should (equal '(t nil) (emacspeak-plus-vertico-test--interrupts collected)))
+    ;; Neither is a prompt opening, so both go to the speaker.
+    (should-not (seq-some #'identity
+                          (emacspeak-plus-vertico-test--streams collected)))))
+
+;;;  Opening the prompt:
+
+;; The three values of `emacspeak-plus-vertico-speak-opening-candidate' differ
+;; in two things: whether the opening report speaks, and whether it records the
+;; candidate as spoken.  Both are asserted for each value, because a value that
+;; speaks without recording says the same thing twice, and one that records
+;; without speaking loses the candidate entirely.
+
+(ert-deftest emacspeak-plus-vertico-test-opening-default-is-at-prompt ()
+  "Out of the box, a prompt opening names the candidate it opened on.
+Stated here rather than read off the variable, so that changing the default
+is a deliberate edit to a test rather than something that happens quietly."
+  (should (eq 'at-prompt
+              (default-value 'emacspeak-plus-vertico-speak-opening-candidate))))
+
+(ert-deftest emacspeak-plus-vertico-test-opening-announces-after-the-prompt ()
+  "A prompt opening names the candidate it opened on, and queues to do it.
+Queueing is the whole of why it can be done at all:
+`dtk-speak' stops speech in progress before it starts, so an interrupting
+report here would cut off the prompt Emacspeak is still reading."
+  (let ((state (list :candidate "server-start" :total 2560 :input (list ""))))
+    (should
+     (equal '(("server-start 1 of 2560" nil t))
+            (emacspeak-plus-vertico-test--reporting state
+              (let ((emacspeak-plus-vertico-speak-opening-candidate 'at-prompt))
+                (emacspeak-plus-vertico--report)))))))
+
+(ert-deftest emacspeak-plus-vertico-test-opening-does-not-repeat-the-default ()
+  "Where the opening candidate is the default, the count stands in for it.
+`C-x b' reads \"Switch to buffer (default *scratch*): *scratch*\" -- the
+name is in the prompt text, and Emacspeak speaks `minibuffer-default' after
+it besides -- so naming it again makes three.  What has not been said is how
+many alternatives there are."
+  (let ((state (list :candidate "*scratch*" :total 3 :input (list "")
+                     :default "*scratch*")))
+    (should
+     (equal '("3 candidates")
+            (emacspeak-plus-vertico-test--texts
+             (emacspeak-plus-vertico-test--reporting state
+               (let ((emacspeak-plus-vertico-speak-opening-candidate 'at-prompt))
+                 (emacspeak-plus-vertico--report))))))))
+
+(ert-deftest emacspeak-plus-vertico-test-opening-names-a-candidate-that-is-not-the-default ()
+  "A prompt whose default is something else still names the candidate.
+`M-x' offers no default and opens on the command last run, which nothing
+has said."
+  (let ((state (list :candidate "server-start" :total 2560 :input (list "")
+                     :default "*scratch*")))
+    (should
+     (equal '("server-start 1 of 2560")
+            (emacspeak-plus-vertico-test--texts
+             (emacspeak-plus-vertico-test--reporting state
+               (let ((emacspeak-plus-vertico-speak-opening-candidate 'at-prompt))
+                 (emacspeak-plus-vertico--report))))))))
+
+(ert-deftest emacspeak-plus-vertico-test-default-is-only-skipped-at-the-opening ()
+  "Moving onto the default later names it, the prompt being long past.
+The rule is about what the prompt just said, not about the candidate being
+special."
+  (let ((state (list :candidate "server-start" :total 3 :input (list "")
+                     :default "*scratch*")))
+    (should
+     (equal '("server-start 1 of 3" "*scratch* 1 of 3")
+            (emacspeak-plus-vertico-test--texts
+             (emacspeak-plus-vertico-test--reporting state
+               (let ((emacspeak-plus-vertico-speak-opening-candidate 'at-prompt))
+                 (emacspeak-plus-vertico--report)
+                 (setq state (list :candidate "*scratch*" :total 3
+                                   :input (list "s") :default "*scratch*"))
+                 (emacspeak-plus-vertico--report))))))))
+
+(ert-deftest emacspeak-plus-vertico-test-opening-goes-to-the-prompts-stream ()
+  "The opening announcement is spoken on the stream the prompt went to.
+Emacspeak speaks a prompt with `dtk-notify'.  Where a notification stream
+is running that is a second process with a queue of its own, so an
+announcement sent to the speaker does not queue behind the prompt -- it
+sounds beside it, at once, which is what this whole announcement is
+arranged to avoid.  Binding `dtk-stop-immediately' cannot help: it governs
+whether a stream is flushed, not which stream is written to.
+
+Once the prompt is open there is nothing to queue behind, so the reports
+that follow go to the speaker as everything else does."
+  (let ((state (list :candidate "server-start" :total 2560 :input (list ""))))
+    (should
+     (equal '(t nil)
+            (emacspeak-plus-vertico-test--streams
+             (emacspeak-plus-vertico-test--reporting state
+               (let ((emacspeak-plus-vertico-speak-opening-candidate 'at-prompt))
+                 (emacspeak-plus-vertico--report)
+                 (setq state (list :candidate "server-start" :total 445
+                                   :input (list "st")))
+                 (emacspeak-plus-vertico--report))))))))
+
+(ert-deftest emacspeak-plus-vertico-test-opening-announcement-is-not-repeated ()
+  "Having named the opening candidate, the first keystroke does not name it again.
+It was spoken, so it is recorded as spoken; what the keystroke changed is
+the count, and that is what it reports."
+  (let ((state (list :candidate "server-start" :total 2560 :input (list ""))))
+    (should
+     (equal '("server-start 1 of 2560" "445 candidates")
+            (emacspeak-plus-vertico-test--texts
+             (emacspeak-plus-vertico-test--reporting state
+               (let ((emacspeak-plus-vertico-speak-opening-candidate 'at-prompt))
+                 (emacspeak-plus-vertico--report)
+                 (setq state (list :candidate "server-start" :total 445
+                                   :input (list "st")))
+                 (emacspeak-plus-vertico--report))))))))
+
+(ert-deftest emacspeak-plus-vertico-test-opening-on-nothing-does-not-interrupt ()
+  "A prompt that opens on an empty list says so without cutting the prompt off.
+Emptied by a keystroke this interrupts, since every further keystroke is
+wasted until the input is corrected -- but at an opening the speech it would
+cut off is the prompt itself."
+  (let ((state (list :candidate nil :total 0 :input (list "zzz"))))
+    (should
+     (equal '(("no match" nil t))
+            (emacspeak-plus-vertico-test--reporting state
+              (let ((emacspeak-plus-vertico-speak-opening-candidate 'at-prompt))
+                (emacspeak-plus-vertico--report)))))))
+
+(ert-deftest emacspeak-plus-vertico-test-opening-is-silent-until-the-first-keystroke ()
+  "Held back, a prompt opening says nothing about the list.
+Many prompts carry the answer in them already -- `C-x k' offers the current
+buffer as its default -- and Emacspeak is still reading it."
+  (let ((state (list :candidate "*scratch*" :total 3 :input (list ""))))
+    (should-not
+     (emacspeak-plus-vertico-test--reporting state
+       (let ((emacspeak-plus-vertico-speak-opening-candidate 'first-keystroke))
+         (emacspeak-plus-vertico--report))))))
+
+(ert-deftest emacspeak-plus-vertico-test-opening-candidate-survives-the-silence ()
+  "Held back, the candidate a prompt opens on is named at the first keystroke.
+Staying silent must not count as having named it: the command last used
+sorts to the head and stays there while its own name is typed, so recording
+it at open would mean never hearing it."
+  (let ((state (list :candidate "server-start" :total 2560 :input (list ""))))
+    (should
+     (equal '("server-start 1 of 445")
+            (emacspeak-plus-vertico-test--texts
+             (emacspeak-plus-vertico-test--reporting state
+               (let ((emacspeak-plus-vertico-speak-opening-candidate
+                      'first-keystroke))
+                 (emacspeak-plus-vertico--report)
+                 (setq state (list :candidate "server-start" :total 445
+                                   :input (list "st")))
+                 (emacspeak-plus-vertico--report))))))))
+
+(ert-deftest emacspeak-plus-vertico-test-opening-candidate-can-be-declined ()
+  "Declined, the opening candidate is never named -- not even later.
+The difference from holding it back is what is recorded: passed over as
+though spoken, so the first keystroke has only the count to report."
+  (let ((state (list :candidate "server-start" :total 2560 :input (list ""))))
+    (should
+     (equal '("445 candidates")
+            (emacspeak-plus-vertico-test--texts
+             (emacspeak-plus-vertico-test--reporting state
+               (let ((emacspeak-plus-vertico-speak-opening-candidate nil))
+                 (emacspeak-plus-vertico--report)
+                 (setq state (list :candidate "server-start" :total 445
+                                   :input (list "st")))
+                 (emacspeak-plus-vertico--report))))))))
 
 ;;;  Deleting input:
 
@@ -350,6 +520,16 @@ would follow silently."
                      vertico-directory-delete-char
                      vertico-directory-delete-word))
     (should (commandp command))))
+
+(ert-deftest emacspeak-plus-vertico-test-notify-routing-exists ()
+  "The Emacspeak entry points this module routes an opening report through.
+`dtk-notify-apply' is how a prompt opening reaches the same stream the
+prompt itself went to.  Emacspeak has renamed functions in this area
+before -- `dtk-notify-speak' became `dtk-notify' in 2024, and a harness
+here went on watching the old name and reported nothing for two years --
+so the names are restated rather than derived."
+  (dolist (fn '(dtk-notify-apply dtk-notify-process dtk-notify))
+    (should (fboundp fn))))
 
 (ert-deftest emacspeak-plus-vertico-test-observed-generic-exists ()
   "The redisplay generic this module attaches to is still a generic.

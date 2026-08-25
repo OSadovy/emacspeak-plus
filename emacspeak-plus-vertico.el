@@ -42,11 +42,11 @@
 ;; a long file name off every line beneath it.
 ;; @item Deleting says what went -- a character, a word, or the whole path
 ;; component where that is what one keystroke removed -- then names the list.
-;; @item A prompt opening is silent: Emacspeak is still reading the prompt, and
-;; many prompts carry the answer in them already -- @kbd{C-x k} offers the
-;; current buffer as its default.  The candidate it opened on is named at the
-;; first keystroke instead, which is what keeps it from going unheard when
-;; filtering never displaces it.
+;; @item A prompt opening names the candidate it opened on, once Emacspeak has
+;; read the prompt out.  @code{emacspeak-plus-vertico-speak-opening-candidate}
+;; holds that back to the first keystroke instead -- many prompts carry the
+;; answer in them already, @kbd{C-x k} offering the current buffer as its
+;; default -- or drops it altogether.
 ;; @item Moving point through the text typed so far is silent, though the
 ;; completion boundary moves with it and the candidates really do change.
 ;; Completing the input speaks the text that completion added.
@@ -63,7 +63,8 @@
 ;; because @code{dtk-speak} stops speech in progress before it starts -- which
 ;; is also why only movement through the list interrupts.  Everything reported
 ;; as a consequence of typing queues instead, behind the echo of the character
-;; that caused it.
+;; that caused it, and so does the announcement a prompt opens with, behind the
+;; prompt.
 
 ;;; Code:
 
@@ -74,6 +75,36 @@
 (require 'emacspeak-preamble)
 (require 'vertico)
 (require 'vertico-directory)
+
+;;;  Customization:
+
+(defgroup emacspeak-plus-vertico nil
+  "Speech-enable the Vertico completion UI."
+  :group 'emacspeak
+  :prefix "emacspeak-plus-vertico-")
+
+(defcustom emacspeak-plus-vertico-speak-opening-candidate 'at-prompt
+  "When the candidate a prompt opens on is named.
+
+`at-prompt' names it as the prompt finishes, so what `RET' would take is
+known before a key is pressed.
+
+`first-keystroke' holds it back until you type.  Many prompts carry the
+answer in them already -- `C-x k' offers the current buffer as its
+default, and Emacspeak speaks `minibuffer-default' as part of the prompt
+-- and hearing the list name it again is repetition rather than news.
+Held back it is still named, because it has to be: the command last used
+sorts to the head of the list and stays there while its own name is
+typed, so filtering would never displace it and it would go unheard
+entirely.
+
+nil is never, rather than later: the opening candidate is recorded as
+though it had been spoken, so a candidate is named only once filtering
+displaces it."
+  :type '(choice (const :tag "Never" nil)
+                 (const :tag "After the prompt" at-prompt)
+                 (const :tag "At the first keystroke" first-keystroke))
+  :group 'emacspeak-plus-vertico)
 
 ;;;  Map faces to voices:
 
@@ -107,6 +138,17 @@ Compared with `eq' rather than `equal': cycling groups and refreshing an
 asynchronous source both install a fresh object holding the same text, and
 `equal' would report those as nothing having happened."
   vertico--input)
+
+(defun emacspeak-plus-vertico--default ()
+  "Return the default this prompt offers, as a string, or nil.
+By convention Emacs writes the default into the prompt text -- \"Switch to
+buffer (default *scratch*): \" -- and Emacspeak speaks `minibuffer-default'
+after the prompt besides, so on such a prompt the name has been heard twice
+before this module has said anything."
+  (let ((default minibuffer-default))
+    (cond
+     ((stringp default) default)
+     ((and (consp default) (stringp (car default))) (car default)))))
 
 (defun emacspeak-plus-vertico--multiple-groups-p ()
   "Return non-nil when the candidates fall into more than one group.
@@ -212,6 +254,19 @@ it, which is what a prompt whose input is itself a valid answer reports."
 
 ;;;  Reporting:
 
+(defun emacspeak-plus-vertico--say (text interrupt opening)
+  "Speak TEXT, interrupting speech in progress only where INTERRUPT says to.
+
+A report caused by typing queues behind the echo of the character that
+caused it, and one at a prompt OPENING behind the prompt -- so an opening
+never interrupts, whatever the rest of the report wanted.
+
+Queueing behind the prompt on the stream the prompt went to."
+  (let ((dtk-stop-immediately (and interrupt (not opening))))
+    (if opening
+        (dtk-notify-apply #'dtk-speak text)
+      (dtk-speak text))))
+
 (defun emacspeak-plus-vertico--report ()
   "Speak whatever the last change to Vertico's list made newsworthy.
 Called once per redisplay, and the only place this module speaks the list."
@@ -237,13 +292,21 @@ Called once per redisplay, and the only place this module speaks the list."
          (total (emacspeak-plus-vertico--total))
          (heading (emacspeak-plus-vertico--group candidate nil))
          (new-heading (unless (equal heading emacspeak-plus-vertico--prev-group)
-                        heading)))
+                        heading))
+         ;; The candidate a prompt opens on is often the default it offers,
+         ;; and the prompt has just said that -- in its own text, and again
+         ;; where Emacspeak speaks `minibuffer-default' after it.
+         (named-by-prompt (and opening candidate
+                               (equal candidate
+                                      (emacspeak-plus-vertico--default)))))
     (setq-local emacspeak-plus-vertico--spoken-by-command nil
                 emacspeak-plus-vertico--moved nil)
     (cond
-     ;; Emacspeak is still reading the prompt, which for `C-x k' and its like
-     ;; already carries the answer.
-     (opening nil)
+     ;; A prompt opening speaks only where
+     ;; `emacspeak-plus-vertico-speak-opening-candidate' asks it to.
+     ((and opening
+           (not (eq emacspeak-plus-vertico-speak-opening-candidate 'at-prompt)))
+      nil)
      (point-only nil)
      (self-spoken nil)
      ;; Emptied by an earlier keystroke and still empty: said once already.
@@ -252,15 +315,16 @@ Called once per redisplay, and the only place this module speaks the list."
      ((and (zerop total) (eql 0 emacspeak-plus-vertico--prev-total)) nil)
      ;; Newly emptied.  Interrupts, because until the input is corrected every
      ;; further keystroke is wasted.
-     ((zerop total) (dtk-speak "no match"))
+     ((zerop total) (emacspeak-plus-vertico--say "no match" t opening))
      ;; The candidate `RET' would take has changed -- the news, and the
      ;; position it ends on reports the new count as well.
      ((not (equal candidate emacspeak-plus-vertico--prev-candidate))
       ;; Filtering queues behind the echo of the character that caused it;
       ;; `dtk-speak' would otherwise cut that echo off.  Moving through the
       ;; list interrupts, since the candidate left behind is no longer wanted.
-      (let ((dtk-stop-immediately navigated))
-        (dtk-speak
+      (emacspeak-plus-vertico--say
+       (if named-by-prompt
+           (emacspeak-plus-vertico--count total)
          (emacspeak-plus-vertico--format
           (emacspeak-plus-vertico--group candidate t)
           new-heading
@@ -269,17 +333,23 @@ Called once per redisplay, and the only place this module speaks the list."
           ;; An annotation is worth its length when reading down the list
           ;; deliberately; while typing it buries the name under a docstring
           ;; the user has not asked for yet.
-          (when navigated (emacspeak-plus-vertico--annotation candidate))))))
+          (when navigated (emacspeak-plus-vertico--annotation candidate))))
+       navigated opening))
      ;; Same candidate, fewer behind it: the count is the only news there is.
      ((not (eql total emacspeak-plus-vertico--prev-total))
-      (let ((dtk-stop-immediately nil))
-        (dtk-speak (emacspeak-plus-vertico--count total)))))
-    (if (or opening point-only)
-        ;; Said nothing, so record nothing: later changes are measured against
-        ;; what was last spoken.  Leaving the opening candidate unrecorded is
-        ;; what lets the first keystroke name it -- the command last used sorts
-        ;; to the head and stays there while its own name is typed, so
-        ;; filtering would never displace it.
+      (emacspeak-plus-vertico--say
+       (emacspeak-plus-vertico--count total) nil opening)))
+    (if (or point-only
+            (and opening
+                 (eq emacspeak-plus-vertico-speak-opening-candidate
+                     'first-keystroke)))
+        ;; Deferred rather than declined, so record nothing but the input:
+        ;; later changes are measured against what was last spoken, and leaving
+        ;; the opening candidate unrecorded is what lets the first keystroke
+        ;; name it -- the command last used sorts to the head and stays there
+        ;; while its own name is typed, so filtering would never displace it.
+        ;; Under the other two values it is recorded either way: spoken under
+        ;; `at-prompt', and deliberately passed over under nil.
         (setq-local emacspeak-plus-vertico--prev-input input)
       (setq-local emacspeak-plus-vertico--prev-candidate candidate
                   emacspeak-plus-vertico--prev-group heading
@@ -405,11 +475,14 @@ input, and what it became is spoken instead."
 (defun emacspeak-plus-vertico--minibuffer-setup ()
   "Clear per-prompt speech state.
 Minibuffers are reused, so a new prompt would otherwise inherit the last
-one's idea of what has already been spoken."
+one's idea of what has already been spoken.  The two flags a command sets
+are cleared here as well as in the report that consumes them."
   (setq-local emacspeak-plus-vertico--prev-candidate nil
               emacspeak-plus-vertico--prev-group nil
               emacspeak-plus-vertico--prev-total nil
-              emacspeak-plus-vertico--prev-input nil))
+              emacspeak-plus-vertico--prev-input nil
+              emacspeak-plus-vertico--moved nil
+              emacspeak-plus-vertico--spoken-by-command nil))
 
 (add-hook 'minibuffer-setup-hook #'emacspeak-plus-vertico--minibuffer-setup)
 
