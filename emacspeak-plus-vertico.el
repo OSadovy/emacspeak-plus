@@ -323,7 +323,7 @@ Called once per redisplay, and the only place this module speaks the list."
  do
  (eval
   `(defadvice ,f (after emacspeak pre act comp)
-     "speak."
+     "Play an auditory icon; the words are the report's to say."
      (when (ems-interactive-p)
        (emacspeak-icon ',icon)))))
 
@@ -336,7 +336,7 @@ Called once per redisplay, and the only place this module speaks the list."
  do
  (eval
   `(defadvice ,f (after emacspeak pre act comp)
-     "speak."
+     "Say so where there are no groups to cycle."
      (when (ems-interactive-p)
        (emacspeak-icon 'large-movement)
        (setq-local emacspeak-plus-vertico--moved t)
@@ -348,7 +348,7 @@ Called once per redisplay, and the only place this module speaks the list."
 ;; and it would say the count instead.  So speak the insertion here and tell
 ;; the report to stay out of the way.
 (defadvice vertico-insert (around emacspeak pre act comp)
-  "speak."
+  "Speak the text completion added."
   (let ((start (point)))
     ad-do-it
     (when (ems-interactive-p)
@@ -390,7 +390,7 @@ input, and what it became is spoken instead."
  do
  (eval
   `(defadvice ,f (around emacspeak pre act comp)
-     "speak."
+     "Speak what the deletion removed."
      (cond
       ((ems-interactive-p)
        (let ((before (emacspeak-plus-vertico--text-to-point)))
@@ -414,4 +414,4 @@ one's idea of what has already been spoken."
 (add-hook 'minibuffer-setup-hook #'emacspeak-plus-vertico--minibuffer-setup)
 
 (provide 'emacspeak-plus-vertico)
-;;;  end of file
+;;; emacspeak-plus-vertico.el ends here

@@ -686,7 +686,7 @@ line's place.  `t x' on a translated message was 0% heard before this."
 ;; `()'.
 
 (defun emacspeak-plus-telega--topic-summary (topic)
-  "Return a forum topic row as one line of speech."
+  "Return TOPIC, a forum topic row, as one line of speech."
   (let ((unread (or (plist-get topic :unread_count) 0))
         (mentions (or (plist-get topic :unread_mention_count) 0))
         (reactions (or (plist-get topic :unread_reaction_count) 0))
@@ -722,7 +722,7 @@ line's place.  `t x' on a translated message was 0% heard before this."
      ", ")))
 
 (defun emacspeak-plus-telega--user-summary (user)
-  "Return a contact row as one line of speech.
+  "Return USER, a contact row, as one line of speech.
 Telega draws the online status on a second line that `n' walks past, so it
 is said here or not at all."
   (string-join
@@ -736,7 +736,7 @@ is said here or not at all."
    ", "))
 
 (defun emacspeak-plus-telega--filter-summary (spec)
-  "Return a custom filter button as one line of speech."
+  "Return SPEC, a custom filter button, as one line of speech."
   (let* ((chats (nthcdr 2 spec))
          (unread (cl-loop for chat in chats
                           sum (or (plist-get chat :unread_count) 0)))
@@ -758,7 +758,7 @@ is said here or not at all."
      ", ")))
 
 (defun emacspeak-plus-telega--story-summary (story)
-  "Return a story button as one line of speech.
+  "Return STORY, a story button, as one line of speech.
 
 A story still being fetched is nil, and has neither a sender nor a state
 to ask about -- both accessors assert rather than decline.  Telega's own

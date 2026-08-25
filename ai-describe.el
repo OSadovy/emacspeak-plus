@@ -205,7 +205,7 @@ buffer, and the buffer decides when to delete it."
 (defun ai-describe-image-mode-resolver (callback)
   "Claim the file an `image-mode' buffer is visiting, and pass it to CALLBACK.
 
-Preferred over the displayed image because an image-mode buffer may be
+Preferred over the displayed image because an `image-mode' buffer may be
 showing a scaled or rotated version of what is on disk."
   (when (and (derived-mode-p 'image-mode) (buffer-file-name))
     (let ((file (expand-file-name (buffer-file-name))))
@@ -434,7 +434,7 @@ recover and is dropped."
 
 Follows `gptel-default-mode', so a description reads and navigates like
 every other gptel chat.  Text mode is the exception: gptel only looks
-for image links in Org and Markdown buffers, and in a text-mode buffer
+for image links in Org and Markdown buffers, and in a `text-mode' buffer
 the link would be sent as the characters spelling it out."
   (if (memq gptel-default-mode '(org-mode markdown-mode))
       gptel-default-mode

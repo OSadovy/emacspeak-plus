@@ -31,8 +31,18 @@ compile:
 test:
 	$(EMACS) -Q --batch -l test/run-tests.el
 
+# `checkdoc-batch' arrived in Emacs 31, and the stated floor here is 29.1.  So
+# the same walk is spelled out: checkdoc reports through `display-warning' and
+# answers nothing either way, which is why the exit status has to be built from
+# whether anything was reported rather than read off a return value.
+#
+# `checkdoc-verb-check-experimental-flag' is off because it reads the whole
+# first line rather than the verb it opens with, so "Return what telega calls
+# the kind of chat SCOPE-TYPE covers" is reported as being in the wrong mood on
+# account of "calls".  It is imperative, and thirteen docstrings here were
+# reported for the same reason.  checkdoc calls the check experimental itself.
 lint:
-	$(BATCH) -f checkdoc-batch $(EL)
+	$(BATCH) --eval '(progn (require (quote checkdoc)) (setq checkdoc-verb-check-experimental-flag nil) (let ((clean t)) (advice-add (quote display-warning) :before (lambda (&rest _) (setq clean nil))) (mapc (function checkdoc-file) command-line-args-left) (kill-emacs (if clean 0 1))))' $(EL)
 
 # Byte-compiled files are never committed, and a stale one wins over the
 # source beside it in any session that has not set `load-prefer-newer'.
