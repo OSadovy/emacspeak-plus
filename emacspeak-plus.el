@@ -46,7 +46,8 @@
 ;;;  Modules:
 
 (defconst emacspeak-plus--modules
-  '(("telega" emacspeak-plus-telega)
+  '(("symbols-outline" emacspeak-plus-symbols-outline)
+    ("telega" emacspeak-plus-telega)
     ("vertico" emacspeak-plus-vertico))
   "Each module here, with the library whose loading should pull it in.
 The library is named as a string, matching `after-load-alist', because

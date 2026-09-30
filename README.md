@@ -76,6 +76,33 @@ packages being covered are loaded.
 
 ## Modules
 
+### `emacspeak-plus-symbols-outline`
+
+Reports [symbols-outline](https://github.com/liushihao456/symbols-outline.el), a
+tree of the current file's symbols in a side window — types, the impl blocks or
+classes holding their methods, modules holding both. Branches fold, and the
+package moves by level, which makes it a way to skim a file without reading it.
+
+- Every line reads as the symbol's name, its kind, and for a symbol with children
+  whether it is expanded or collapsed and how many it holds: *"impl IconDecoder,
+  expanded, 4 items"*, *"get method"*. On screen the kind is an icon and the
+  folding state a chevron in the margin, and neither is text Emacspeak would read.
+- The depth is said when it changes — *"get method, level 2"* on stepping into an
+  impl — and not while it stays the same.
+- Opening the outline names the symbol the cursor was in, which is where the
+  package puts you. The symbols arrive from the language server after the
+  keystroke, so this is spoken when they are drawn.
+- The arrow keys move through the outline and speak each line, leaving the file
+  where it was; the package's own `n` and `p` also move point in the file to the
+  symbol. `f`, `b`, `u`, `d`, `<` and `>` — next and previous at the same level,
+  parent, first child, first and last — speak where they land, and a move that
+  goes nowhere plays the warning icon.
+- `TAB` folds and unfolds with the open and close icons, and plays the warning
+  icon on a symbol with nothing to fold. Visiting a symbol reads the line of the
+  file it lands on.
+- `s` speaks the symbol's signature where the language server supplies one:
+  *"fn(&self) -> usize"*.
+
 ### `emacspeak-plus-telega`
 
 Speech for [telega](https://github.com/zevlg/telega.el), the Telegram client.

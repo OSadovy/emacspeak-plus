@@ -53,6 +53,7 @@
 ;; failing wholesale.  What was skipped is reported, so a suite that silently
 ;; stops running is not mistaken for one that passes.
 (dolist (suite '(("emacspeak-plus" . "emacspeak-plus-tests.el")
+                 ("emacspeak-plus-symbols-outline" . "emacspeak-plus-symbols-outline-tests.el")
                  ("emacspeak-plus-telega" . "emacspeak-plus-telega-tests.el")
                  ("emacspeak-plus-vertico" . "emacspeak-plus-vertico-tests.el")
                  ("ai-describe" . "ai-describe-tests.el")))
