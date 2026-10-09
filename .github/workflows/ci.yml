@@ -40,7 +40,7 @@ jobs:
             (add-to-list 'package-archives '(\"melpa\" . \"https://melpa.org/packages/\") t)
             (package-initialize)
             (package-refresh-contents)
-            (dolist (p '(vertico gptel telega))
+            (dolist (p '(vertico gptel telega symbols-outline))
               (unless (package-installed-p p) (package-install p))))"
 
       - name: Byte-compile
