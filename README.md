@@ -324,7 +324,7 @@ modules are named and wired, how one replaces an Emacspeak module etc.
 
 ## Related work
 
-Nothing here was written in a vacuum, and two of the three modules owe something
+Nothing here was written in a vacuum, and two of the four modules owe something
 concrete to work done elsewhere.
 
 - **[emacspeak-support](https://github.com/bartbunting/emacspeak-support)**,
