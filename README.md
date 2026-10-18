@@ -76,6 +76,37 @@ packages being covered are loaded.
 
 ## Modules
 
+### `emacspeak-plus-speed-type`
+
+Reads ahead for [speed-type](https://github.com/dakra/speed-type), a typing
+tutor that has you type over a passage — common words, a book, or any region,
+so a drill of symbols is just a buffer of them. A sighted typist reads ahead of
+the cursor and sees mistakes as colours; this reads ahead aloud.
+
+- Starting a drill speaks its first two words. From then on, starting a word
+  speaks the one after it, so the next word is known before the current one is
+  finished. A word is anything between whitespace: *"foo::bar();"* is one.
+- Starting the last word plays the `repeat-end` icon where the next word would
+  be. The drill ends on its last character, and a key typed after that is an
+  error spoken over the results.
+- Words queue behind what is being spoken and are never cut off, by typing or
+  by each other. Typing is not echoed. A word is read ahead once, however often
+  it is retyped.
+- A wrong key plays the `search-miss` icon, over speech rather than instead of
+  it.
+- Finishing speaks net words per minute, accuracy, the mistakes left
+  uncorrected and the time: *"Done. 42 words per minute, accuracy 96.5
+  percent, 2 mistakes left, 1 minute 5 seconds."* Accuracy counts a corrected
+  mistake against you too, so it cannot say whether any are left.
+- Backspace and `C-<backspace>` say what is left to type from where they land,
+  then the next word: stepping back to the *o* of *brown* says *"own"*, then
+  *"fox"*. Keys are compared by position, so one letter dropped or doubled makes
+  every key after it a mistake; backspacing until what is left sounds right is
+  the way back. Whitespace is named: *"space"*.
+- `C-c C-r` says the same without deleting anything.
+- Punctuation is spoken in full in the drill, and capitals are marked, since
+  speed-type compares case: *"mr."* typed for *"Mr."* is a mistake.
+
 ### `emacspeak-plus-symbols-outline`
 
 Reports [symbols-outline](https://github.com/liushihao456/symbols-outline.el), a
@@ -324,7 +355,7 @@ modules are named and wired, how one replaces an Emacspeak module etc.
 
 ## Related work
 
-Nothing here was written in a vacuum, and two of the four modules owe something
+Nothing here was written in a vacuum, and two of the five modules owe something
 concrete to work done elsewhere.
 
 - **[emacspeak-support](https://github.com/bartbunting/emacspeak-support)**,

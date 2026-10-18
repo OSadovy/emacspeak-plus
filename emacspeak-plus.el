@@ -46,7 +46,8 @@
 ;;;  Modules:
 
 (defconst emacspeak-plus--modules
-  '(("symbols-outline" emacspeak-plus-symbols-outline)
+  '(("speed-type" emacspeak-plus-speed-type)
+    ("symbols-outline" emacspeak-plus-symbols-outline)
     ("telega" emacspeak-plus-telega)
     ("vertico" emacspeak-plus-vertico))
   "Each module here, with the library whose loading should pull it in.
