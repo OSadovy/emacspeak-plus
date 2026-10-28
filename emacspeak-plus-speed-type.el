@@ -170,7 +170,10 @@ mistakes were never corrected, and SECONDS the time spent typing."
             (0 "no mistakes left")
             (1 "1 mistake left")
             (_ (format "%d mistakes left" left)))
-          (format-seconds "%M %z%S" seconds)))
+          ;; Not "%z": before Emacs 30 it still writes the zero minutes when
+          ;; every unit is zero.
+          (let ((seconds (round seconds)))
+            (format-seconds (if (< seconds 60) "%S" "%M %S") seconds))))
 
 (defun emacspeak-plus-speed-type--results ()
   "Return the sentence reporting the drill in the current buffer."
