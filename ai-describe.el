@@ -139,6 +139,33 @@ has to accept images at all."
                  (symbol :tag "Model"))
   :group 'ai-describe)
 
+(defcustom ai-describe-backend nil
+  "Name of the gptel backend to describe images with, or nil for `gptel-backend'.
+
+The name is the one the backend was registered under.  A model named in
+`ai-describe-model' is used only if this backend offers it; otherwise
+the backend's first model is, so switching between a cloud backend and
+a local one does not also mean switching the model by hand.
+\\[ai-describe-select-backend] sets this for the session."
+  :type '(choice (const :tag "Whatever gptel is set to" nil)
+                 (string :tag "Backend name"))
+  :group 'ai-describe)
+
+(defcustom ai-describe-include-reasoning 'gptel
+  "What to do with a thinking model's reasoning in a description.
+
+The symbol `gptel' leaves it to `gptel-include-reasoning'.  Anything
+else is used as that variable's value in description buffers only: nil
+drops the reasoning, a string names a buffer to collect it in.  Inserted
+into the description, it is heard before the description itself, and can
+run to many times its length."
+  :type '(choice (const :tag "As gptel-include-reasoning says" gptel)
+                 (const :tag "Drop it" nil)
+                 (const :tag "Include it" t)
+                 (const :tag "Include it, but do not send it back" ignore)
+                 (string :tag "Collect it in buffer"))
+  :group 'ai-describe)
+
 ;;;  Finding the image
 
 (defcustom ai-describe-resolvers
@@ -385,16 +412,25 @@ thumbnail in a chat."
 (defvar ai-describe--last-buffer nil
   "The chat buffer of the most recent description.")
 
-(defun ai-describe--check-model (mime)
-  "Signal unless the model in use accepts an image of type MIME."
-  (let ((model (or ai-describe-model gptel-model)))
-    (unless (gptel--model-capable-p 'media model)
-      (user-error
-       "Model `%s' is not registered as accepting images.  If it does accept \
+(defun ai-describe--backend-and-model ()
+  "Return (BACKEND . MODEL), the gptel backend and model to describe with."
+  (if (null ai-describe-backend)
+      (cons gptel-backend (or ai-describe-model gptel-model))
+    (let* ((backend (gptel-get-backend ai-describe-backend))
+           (models (gptel-backend-models backend)))
+      (cons backend (if (memq ai-describe-model models)
+                        ai-describe-model
+                      (car models))))))
+
+(defun ai-describe--check-model (model mime)
+  "Signal unless MODEL accepts an image of type MIME."
+  (unless (gptel--model-capable-p 'media model)
+    (user-error
+     "Model `%s' is not registered as accepting images.  If it does accept \
 them, its capabilities were never attached: see `gptel--process-models'"
-       model))
-    (unless (gptel--model-mime-capable-p mime model)
-      (user-error "Model `%s' does not accept %s images" model mime))))
+     model))
+  (unless (gptel--model-mime-capable-p mime model)
+    (user-error "Model `%s' does not accept %s images" model mime)))
 
 (defun ai-describe--buffer-name (info)
   "Return a buffer name for the description of the image in INFO."
@@ -460,18 +496,24 @@ follow-up question would be typed."
          (stashed (and ai-describe--stash
                        (string-prefix-p (file-name-as-directory ai-describe--stash)
                                         file)))
+         (choice (ai-describe--backend-and-model))
          (mode (ai-describe--chat-mode))
          (buffer (get-buffer-create (ai-describe--buffer-name info))))
     (unless (file-readable-p file)
       (user-error "Cannot read the image at `%s'" file))
-    (ai-describe--check-model mime)
+    (ai-describe--check-model (cdr choice) mime)
     (with-current-buffer buffer
       (funcall mode)
       ;; Without this gptel sends the link as the text spelling it out, and
       ;; never opens the file it names.
       (setq-local gptel-track-media t)
       (setq-local gptel-system-prompt (ai-describe--system-prompt))
-      (when ai-describe-model (setq-local gptel-model ai-describe-model))
+      ;; Buffer-local, so a follow-up typed here goes to the same place, and
+      ;; switching backends later leaves this conversation where it was.
+      (setq-local gptel-backend (car choice))
+      (setq-local gptel-model (cdr choice))
+      (unless (eq ai-describe-include-reasoning 'gptel)
+        (setq-local gptel-include-reasoning ai-describe-include-reasoning))
       (when-let* ((context (plist-get info :context)))
         (insert (ai-describe--fold-surrogates context) "\n\n"))
       (ai-describe--insert-link file mode)
@@ -540,6 +582,28 @@ out to be worth a question."
   (unless (buffer-live-p ai-describe--last-buffer)
     (user-error "Nothing has been described yet"))
   (pop-to-buffer ai-describe--last-buffer))
+
+(defconst ai-describe--gptel-default "gptel's own"
+  "The choice in `ai-describe-select-backend' that follows `gptel-backend'.")
+
+;;;###autoload
+(defun ai-describe-select-backend (name)
+  "Describe images with the gptel backend NAME, for the rest of the session.
+
+NAME is one of the backends registered with gptel, or the entry standing
+for whatever `gptel-backend' is.  Descriptions already open keep the
+backend they were started with.  Customize `ai-describe-backend' to make
+a choice outlast the session."
+  (interactive
+   (list (completing-read "Describe images with: "
+                          (cons ai-describe--gptel-default
+                                (mapcar #'car gptel--known-backends))
+                          nil t)))
+  (setq ai-describe-backend
+        (unless (equal name ai-describe--gptel-default) name))
+  (pcase-let ((`(,backend . ,model) (ai-describe--backend-and-model)))
+    (message "Describing images with %s, model %s"
+             (gptel-backend-name backend) model)))
 
 ;; Make the directive selectable from `gptel-menu' as well, so it can be
 ;; applied to a chat that was not started by this command.

@@ -298,12 +298,13 @@ confused with.
 
 #### Commands
 
-Nothing is bound by default; the two commands are yours to place.
+Nothing is bound by default; the commands are yours to place.
 
 | command | |
 |---|---|
 | `ai-describe-image-at-point` | describe the image at point and open a chat about it. With `C-u`, describe it briefly without moving point |
 | `ai-describe-last` | return to the chat of the most recent description |
+| `ai-describe-select-backend` | choose, for the rest of the session, which registered gptel backend describes images — a local server for privacy, say, or a cloud one for a second opinion |
 
 Emacspeak users may want the first on Emacspeak's own alternate keymap, which
 is where a personal command belongs:
@@ -321,6 +322,8 @@ is where a personal command belongs:
 | `-request-detailed` | *"Describe this image in full detail."* | what to ask for the long answer |
 | `-request-brief` | *"In one or two sentences…"* | what to ask for the brief one. Brief is a different question rather than a shorter answer: it is asked to decide whether the image is worth stopping for |
 | `-model` | `nil` | which model to use, or nil for the current `gptel-model` |
+| `-backend` | `nil` | the name of the gptel backend to use, or nil for the current `gptel-backend`. With one named, `-model` is used only if that backend offers it, and the backend's first model otherwise |
+| `-include-reasoning` | `gptel` | what to do with a thinking model's reasoning in a description: `gptel` follows `gptel-include-reasoning`; anything else is that variable's value in description buffers only, so `nil` drops it and a string collects it in a buffer of that name. Inserted, it is heard before the description |
 | `-resolvers` | see source | the functions tried in order to find and fetch the image at point |
 
 All are prefixed `ai-describe`. The directive and the language are kept apart so

@@ -410,18 +410,135 @@ history, and returns to that instead."
 
 (ert-deftest ai-describe-test-refuses-model-without-vision ()
   "A model that does not take images is reported, not sent to."
-  (let ((gptel-model 'ai-describe-test-blind-model)
-        (ai-describe-model nil))
-    (put 'ai-describe-test-blind-model :capabilities nil)
-    (should-error (ai-describe--check-model "image/png") :type 'user-error)))
+  (put 'ai-describe-test-blind-model :capabilities nil)
+  (should-error (ai-describe--check-model 'ai-describe-test-blind-model "image/png")
+                :type 'user-error))
 
 (ert-deftest ai-describe-test-refuses-unsupported-mime ()
   "A model that takes images but not this kind of image is reported too."
-  (let ((gptel-model 'ai-describe-test-jpeg-only)
-        (ai-describe-model nil))
-    (put 'ai-describe-test-jpeg-only :capabilities '(media))
-    (put 'ai-describe-test-jpeg-only :mime-types '("image/jpeg"))
-    (should-error (ai-describe--check-model "image/png") :type 'user-error)))
+  (put 'ai-describe-test-jpeg-only :capabilities '(media))
+  (put 'ai-describe-test-jpeg-only :mime-types '("image/jpeg"))
+  (should-error (ai-describe--check-model 'ai-describe-test-jpeg-only "image/png")
+                :type 'user-error))
+
+;;;  Choosing the backend
+
+(defmacro ai-describe-tests--with-backends (&rest body)
+  "Run BODY with two registered backends and nothing else.
+
+\"Cloud\" offers `cloud-a' and `cloud-b', \"Local\" offers
+`local-a', and gptel's own backend is Cloud on `cloud-a'."
+  (declare (indent 0))
+  `(let* ((gptel--known-backends nil)
+          (cloud (gptel-make-openai "Cloud" :key "unused"
+                                    :models '(cloud-a cloud-b)))
+          (local (gptel-make-openai "Local" :key "unused"
+                                    :models '(local-a)))
+          (gptel-backend cloud)
+          (gptel-model 'cloud-a)
+          (ai-describe-backend nil)
+          (ai-describe-model nil))
+     (ignore cloud local)
+     ,@body))
+
+(ert-deftest ai-describe-test-backend-follows-gptel ()
+  "With no backend chosen, gptel's backend and model are used."
+  (ai-describe-tests--with-backends
+    (should (equal (ai-describe--backend-and-model) (cons cloud 'cloud-a)))
+    (setq ai-describe-model 'cloud-b)
+    (should (equal (ai-describe--backend-and-model) (cons cloud 'cloud-b)))))
+
+(ert-deftest ai-describe-test-backend-keeps-a-model-it-offers ()
+  "A chosen backend keeps `ai-describe-model' when it offers that model."
+  (ai-describe-tests--with-backends
+    (setq ai-describe-backend "Cloud" ai-describe-model 'cloud-b)
+    (should (equal (ai-describe--backend-and-model) (cons cloud 'cloud-b)))))
+
+(ert-deftest ai-describe-test-backend-replaces-a-model-it-lacks ()
+  "A chosen backend that lacks `ai-describe-model' uses its first model.
+
+Otherwise a model set for the cloud backend would be sent to the local
+one, which has never heard of it."
+  (ai-describe-tests--with-backends
+    (setq ai-describe-backend "Local" ai-describe-model 'cloud-b)
+    (should (equal (ai-describe--backend-and-model) (cons local 'local-a)))))
+
+(ert-deftest ai-describe-test-unknown-backend-is-reported ()
+  "A backend name gptel does not know is an error, not a silent fallback."
+  (ai-describe-tests--with-backends
+    (setq ai-describe-backend "Nowhere")
+    (should-error (ai-describe--backend-and-model) :type 'user-error)))
+
+(ert-deftest ai-describe-test-chat-buffer-holds-the-choice ()
+  "The chat buffer keeps the chosen backend and model as its own.
+
+A follow-up typed there must go where the description came from, even
+after gptel's global choice moves on."
+  (ai-describe-tests--with-backends
+    (setq ai-describe-backend "Local")
+    (let ((buffer nil)
+          (gptel-default-mode 'org-mode))
+      (cl-letf (((symbol-function 'gptel-send) #'ignore)
+                ((symbol-function 'ai-describe--check-model) #'ignore))
+        (unwind-protect
+            (progn
+              (setq buffer (ai-describe--start
+                            (list :file ai-describe-tests--png) nil))
+              (with-current-buffer buffer
+                (should (local-variable-p 'gptel-backend))
+                (should (eq gptel-backend local))
+                (should (eq gptel-model 'local-a))))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest ai-describe-test-model-is-checked-against-the-choice ()
+  "The capability check is made on the model that will be used."
+  (ai-describe-tests--with-backends
+    (setq ai-describe-backend "Local")
+    (let ((checked nil)
+          (buffer nil))
+      (cl-letf (((symbol-function 'gptel-send) #'ignore)
+                ((symbol-function 'ai-describe--check-model)
+                 (lambda (model _mime) (setq checked model))))
+        (unwind-protect
+            (setq buffer (ai-describe--start
+                          (list :file ai-describe-tests--png) nil))
+          (when (buffer-live-p buffer) (kill-buffer buffer))))
+      (should (eq checked 'local-a)))))
+
+(ert-deftest ai-describe-test-reasoning-follows-gptel-by-default ()
+  "By default the description buffer leaves `gptel-include-reasoning' alone."
+  (let ((ai-describe-include-reasoning 'gptel)
+        (buffer nil))
+    (cl-letf (((symbol-function 'gptel-send) #'ignore)
+              ((symbol-function 'ai-describe--check-model) #'ignore))
+      (unwind-protect
+          (progn
+            (setq buffer (ai-describe--start (list :file ai-describe-tests--png) nil))
+            (should-not (local-variable-p 'gptel-include-reasoning buffer)))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest ai-describe-test-reasoning-setting-stays-local ()
+  "A reasoning setting applies to the description buffer and nowhere else."
+  (let ((ai-describe-include-reasoning "*reasoning*")
+        (gptel-include-reasoning 'ignore)
+        (buffer nil))
+    (cl-letf (((symbol-function 'gptel-send) #'ignore)
+              ((symbol-function 'ai-describe--check-model) #'ignore))
+      (unwind-protect
+          (progn
+            (setq buffer (ai-describe--start (list :file ai-describe-tests--png) nil))
+            (should (equal (buffer-local-value 'gptel-include-reasoning buffer)
+                           "*reasoning*"))
+            (should (eq (default-value 'gptel-include-reasoning) 'ignore)))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest ai-describe-test-select-backend ()
+  "Selecting a backend sets it, and the gptel entry clears it again."
+  (ai-describe-tests--with-backends
+    (ai-describe-select-backend "Local")
+    (should (equal ai-describe-backend "Local"))
+    (ai-describe-select-backend ai-describe--gptel-default)
+    (should (null ai-describe-backend))))
 
 (provide 'ai-describe-tests)
 ;;; ai-describe-tests.el ends here
