@@ -48,6 +48,14 @@ library whose loading should pull it in:
 The library is named as a string because that is what `with-eval-after-load`
 matches before the feature exists.
 
+What two modules need changed in one Emacspeak function goes in a file of its
+own, named with the same prefix and required by each, rather than in an advice
+from each. A single advice keeps what the function does in one place; each
+module only says where it applies.
+
+`emacspeak-plus-visual-line` is one. It speaks for no package, so it is not in
+`emacspeak-plus--modules`, and loads with whichever module requires it.
+
 `ai-describe` is the exception that proves the prefix rule: it requires neither
 Emacspeak nor a screen reader, has no Emacspeak counterpart to be confused with,
 and so keeps its own name.

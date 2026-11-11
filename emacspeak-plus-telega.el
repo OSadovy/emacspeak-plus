@@ -45,6 +45,7 @@
 ;;; Code:
 
 (require 'emacspeak-preamble)
+(require 'emacspeak-plus-visual-line)
 (require 'telega)
 
 (defgroup emacspeak-plus-telega nil
@@ -956,23 +957,15 @@ type hierarchy that makes one a supertype of the other.")
           (remove-text-properties
            (button-start button) (button-end button) '(auditory-icon nil)))))))
 
-;; `emacspeak-speak-visual-line' cues the start of a physical line with `left'
-;; and its end with `right', which tells a reader of wrapped prose which line
-;; breaks the author wrote and which the window imposed.  A chatbuf wraps every
-;; message, so the cue fires on essentially every arrow key and distinguishes
-;; nothing.  On a blank line both of its patterns match, and the chime arrives
-;; with no words after it at all.
-;;
-;; Only `emacspeak-icon' is silenced, which is what those two cues use.  The
-;; icons that come from an `auditory-icon' text property -- a `[Download]'
-;; button read over in passing -- are played by `emacspeak-queue-icon' and are
-;; left alone.
-(defadvice emacspeak-speak-visual-line (around emacspeak-plus-telega pre act comp)
-  "Do not cue physical line edges in a chat, where every line wraps."
-  (if (derived-mode-p 'telega-chat-mode)
-      (cl-letf (((symbol-function 'emacspeak-icon) #'ignore))
-        ad-do-it)
-    ad-do-it))
+;; A chatbuf wraps every message, so the physical-line edge cues that
+;; `emacspeak-speak-visual-line' plays would fire on essentially every arrow
+;; key and distinguish nothing.  On a blank line both of its patterns match,
+;; and the chime arrives with no words after it at all.
+(defun emacspeak-plus-telega--quiet-line-edges ()
+  "Read a chat's visual lines without cueing physical line edges."
+  (setq-local emacspeak-plus-visual-line-quiet-edges t))
+
+(add-hook 'telega-chat-mode-hook #'emacspeak-plus-telega--quiet-line-edges)
 
 (defun emacspeak-plus-telega--speak-exhausted (n)
   "Say that there is nothing further in the direction N was travelling.

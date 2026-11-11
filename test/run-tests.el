@@ -57,6 +57,7 @@
                  ("emacspeak-plus-symbols-outline" . "emacspeak-plus-symbols-outline-tests.el")
                  ("emacspeak-plus-telega" . "emacspeak-plus-telega-tests.el")
                  ("emacspeak-plus-vertico" . "emacspeak-plus-vertico-tests.el")
+                 ("emacspeak-plus-visual-line" . "emacspeak-plus-visual-line-tests.el")
                  ("ai-describe" . "ai-describe-tests.el")))
   (if (condition-case err
           (progn (require (intern (car suite))) t)

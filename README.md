@@ -170,6 +170,9 @@ Beyond reading what is under point, it covers:
   settings; search; and help and info windows.
 - **Voice and video notes**: how long, where you are in one, and on-demand
   transcription through Telegram.
+- **No line-edge cues in a chat.** Every message wraps, so the `left` and
+  `right` icons Emacspeak plays at a physical line's edges would sound on
+  nearly every arrow key; see [Line edges](#line-edges).
 
 #### Keys
 
@@ -273,6 +276,26 @@ Reports the [Vertico](https://github.com/minad/vertico) completion list —
 | `emacspeak-plus-vertico-speak-opening-candidate` | `at-prompt` | when the candidate a prompt opens on is named. `at-prompt` names it as the prompt finishes. `first-keystroke` holds it back until you type — many prompts carry the answer already, and hearing the list repeat it is not news. `nil` never names it, so a candidate is spoken only once filtering displaces it. |
 
 This one **replaces** Emacspeak's own `emacspeak-vertico`.
+
+### Line edges
+
+Under `visual-line-mode` Emacspeak plays `left` when the arrow keys land at the
+start of a physical line and `right` at its end, telling the line breaks you
+wrote from those the window made. Where nearly every row starts a line, the cue
+says nothing. Any buffer that sets `emacspeak-plus-visual-line-quiet-edges`
+locally reads its lines without those two icons; the line is still spoken and
+every other icon still plays. The telega module sets it in chats, and you can
+in a mode hook of your own:
+
+```elisp
+(defun my-quiet-line-edges ()
+  (setq-local emacspeak-plus-visual-line-quiet-edges t))
+
+(add-hook 'some-mode-hook #'my-quiet-line-edges)
+```
+
+The variable comes with `emacspeak-plus-visual-line`, which the telega module
+loads.
 
 ### `ai-describe`
 

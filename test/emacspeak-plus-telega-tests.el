@@ -14,6 +14,10 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'emacspeak-plus-telega)
+(require 'emacspeak-plus-visual-line-reading
+         (expand-file-name "emacspeak-plus-visual-line-reading"
+                           (file-name-directory
+                            (or load-file-name buffer-file-name))))
 
 ;;;  Fixtures:
 
@@ -213,6 +217,21 @@ the chat's buffer if it has one."
                      emacspeak-plus-telega-cycle-speak-composing))
     (should (eq 'emacspeak-plus-telega-announce-map
                 (get command 'repeat-map)))))
+
+;;;  Line edges:
+
+(ert-deftest emacspeak-plus-telega-test-chat-quiets-line-edges ()
+  "A chat reads its lines without the physical-line edge cue; elsewhere
+the cue stays."
+  (should (memq #'emacspeak-plus-telega--quiet-line-edges telega-chat-mode-hook))
+  (with-temp-buffer
+    (insert "Bob: see you at six")
+    (goto-char (point-min))
+    (should (equal '((icon left) (speak "Bob: see you at six"))
+                   (emacspeak-plus-visual-line-test-read)))
+    (emacspeak-plus-telega--quiet-line-edges)
+    (should (equal '((speak "Bob: see you at six"))
+                   (emacspeak-plus-visual-line-test-read)))))
 
 ;;;  Drift:
 
