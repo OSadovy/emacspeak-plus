@@ -76,6 +76,68 @@ packages being covered are loaded.
 
 ## Modules
 
+### `emacspeak-plus-notmuch`
+
+Speech for [notmuch](https://notmuchmail.org/), the mail reader. It
+**replaces** Emacspeak's own `emacspeak-notmuch`, which spoke nothing for `n`,
+`p` or Space and "nil" on opening a search.
+
+- Every notmuch command that lands on a thread in a search -- `n`, `p`, `<`,
+  `>`, Space and `DEL` paging -- speaks it as a summary: the authors, subject,
+  date, the other tags and how many messages -- *"Alice, Bob Lunch plans
+  yesterday 14:05 inbox 4 messages"*. The arrow keys read the line as drawn.
+- Arriving on a thread in a search or a message in a thread plays the button
+  icon, as `emacspeak-plus-telega` does on arriving at a chat or message;
+  status icons follow it. Where the move is itself remarked on -- the
+  large-movement icon into another thread, the close icon back to the list --
+  that icon plays instead.
+- Opening a search speaks the first thread as soon as it arrives, unless you
+  have pressed a key meanwhile, and how many threads have something unread on
+  the notification stream when the search finishes -- *"2 of 3 threads
+  unread"*. Refreshing, filtering, `o` and `j` open a
+  search anew.
+- `q` from a thread back to its search speaks the thread landed on there.
+  `M-n` and `M-p` play the large-movement icon and land on the next or
+  previous thread as if it had been opened; with none, they say where notmuch
+  went back to.
+- Landing on a message in a thread -- opening it, `n`, `p`, `N`, `P`, or Space
+  moving on -- speaks from, date, to, cc, the other tags and how many
+  attachments, then the body as far as the window shows it. A closed message
+  plays the ellipses icon instead. The subject is said on the message a thread
+  opens on, and after that only where it changes.
+- A closed message's header line plays the ellipses icon whenever the line is
+  read, by the arrow keys or anything else; nothing on screen changes.
+- The arrow keys in a thread play no `left` or `right` icon at the start or
+  end of a line. notmuch turns on `visual-line-mode` there, but has already
+  broken each message into lines itself, so the cue would mark nearly every
+  one. The display is unchanged; see [Line edges](#line-edges).
+- Dates are spoken in words: *"10 minutes ago"*, *"today 12:30"*,
+  *"yesterday 12:30"*, *"Monday 12:30"*, *"October 12"*. A date over six months
+  old, which notmuch shows as 2025-06-30, is pronounced as a date wherever it
+  is read, summaries and arrow keys alike.
+- Space and `DEL` scrolling play the scroll icon and read only the text that
+  came into view. Space at the end of a thread lands on the empty last line,
+  and once more archives the thread and opens the next one.
+- Tagging and archiving say what changed -- *"Archived"*, *"Moved to trash"*,
+  *"Added work; removed unread"*, or *"Tags unchanged"* -- and, where the
+  command moved on, as archiving does, the item it moved to.
+- Status tags are icons rather than words: `unread` plays `new-mail`,
+  `replied` `modified-object`, `flagged` `mark-object`. `passed` is spoken as
+  "forwarded".
+- Tags the search itself requires go unsaid: no "inbox" on every row of an
+  inbox search, nor on the messages of a thread opened from it. A thread's
+  `attachment` tag goes unsaid where its attachments are counted.
+- Tab on a saved search or tag on the start page says its name and count --
+  *"Warg Trading inbox, 91"*.
+- Fields are told apart by voice rather than by punctuation.
+- A command that could not move plays the warning icon and says nothing.
+
+Everything spoken is read from the notmuch buffers; nothing asks the database.
+
+| option | default | |
+|---|---|---|
+| `emacspeak-plus-notmuch-open-at-first-unread` | `nil` | open a thread on its first unread message rather than where notmuch puts it, the first message the search matched |
+
 ### `emacspeak-plus-speed-type`
 
 Reads ahead for [speed-type](https://github.com/dakra/speed-type), a typing
@@ -284,8 +346,8 @@ start of a physical line and `right` at its end, telling the line breaks you
 wrote from those the window made. Where nearly every row starts a line, the cue
 says nothing. Any buffer that sets `emacspeak-plus-visual-line-quiet-edges`
 locally reads its lines without those two icons; the line is still spoken and
-every other icon still plays. The telega module sets it in chats, and you can
-in a mode hook of your own:
+every other icon still plays. The telega and notmuch modules set it in chats
+and threads, and you can in a mode hook of your own:
 
 ```elisp
 (defun my-quiet-line-edges ()
@@ -294,8 +356,7 @@ in a mode hook of your own:
 (add-hook 'some-mode-hook #'my-quiet-line-edges)
 ```
 
-The variable comes with `emacspeak-plus-visual-line`, which the telega module
-loads.
+The variable comes with `emacspeak-plus-visual-line`, which either module loads.
 
 ### `ai-describe`
 
@@ -372,6 +433,17 @@ directories:
 EMACSLOADPATH=~/src/telega.el: make test
 ```
 
+The same goes for notmuch, whose `make install` puts its Emacs files in a
+directory of their own -- `~/.local/share/emacs/site-lisp` under a home prefix:
+
+```
+EMACSLOADPATH=~/.local/share/emacs/site-lisp: make compile test
+```
+
+The notmuch tests also need the `notmuch` program. They build a throwaway mail
+database and point `NOTMUCH_CONFIG` at it, since opening a message in notmuch
+changes its tags, and are skipped where `notmuch` is not installed.
+
 Tests cover what each module chooses to say, with the state adapters stubbed and
 `dtk-speak` collected; each suite also checks that the private names it reads
 upstream still exist.
@@ -381,7 +453,7 @@ modules are named and wired, how one replaces an Emacspeak module etc.
 
 ## Related work
 
-Nothing here was written in a vacuum, and two of the five modules owe something
+Nothing here was written in a vacuum, and three of the six modules owe something
 concrete to work done elsewhere.
 
 - **[emacspeak-support](https://github.com/bartbunting/emacspeak-support)**,
@@ -392,6 +464,11 @@ concrete to work done elsewhere.
   shape of the face-to-voice map. It also covers Corfu, Which-Key, Helm and
   agent-shell, and carries native Windows speech servers, none of which this
   collection duplicates.
+- **[emacsvox](https://github.com/bartbunting/emacsvox)**, Bart Bunting's
+  successor to emacspeak-support. The notmuch module takes from its notmuch
+  modules the techniques of speaking a search's first result as it arrives
+  unless a key was pressed meanwhile, comparing state before and after a
+  command, and status tags as icons.
 - **[emacspeak-goodies](https://github.com/devinprater/emacspeak-goodies)**, by
   Devin Prater, which identified that telega's `help-echo` text leaks into
   speech and has to be silenced — a fix carried over here.

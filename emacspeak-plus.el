@@ -46,7 +46,8 @@
 ;;;  Modules:
 
 (defconst emacspeak-plus--modules
-  '(("speed-type" emacspeak-plus-speed-type)
+  '(("notmuch" emacspeak-plus-notmuch)
+    ("speed-type" emacspeak-plus-speed-type)
     ("symbols-outline" emacspeak-plus-symbols-outline)
     ("telega" emacspeak-plus-telega)
     ("vertico" emacspeak-plus-vertico))
@@ -56,7 +57,8 @@ that is what `with-eval-after-load' compares against before the feature
 exists.")
 
 (defconst emacspeak-plus--replaces
-  '((emacspeak-plus-vertico . emacspeak-vertico))
+  '((emacspeak-plus-notmuch . emacspeak-notmuch)
+    (emacspeak-plus-vertico . emacspeak-vertico))
   "Modules here that stand in for an Emacspeak module, and which one.
 Emacspeak names every advice it defines `emacspeak', and old-style advice
 is keyed on function, class and name -- so where both modules advise the

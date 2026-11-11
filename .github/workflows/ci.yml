@@ -40,8 +40,12 @@ jobs:
             (add-to-list 'package-archives '(\"melpa\" . \"https://melpa.org/packages/\") t)
             (package-initialize)
             (package-refresh-contents)
-            (dolist (p '(vertico gptel telega symbols-outline speed-type))
+            (dolist (p '(vertico gptel telega symbols-outline speed-type notmuch))
               (unless (package-installed-p p) (package-install p))))"
+
+      # The notmuch tests drive a real notmuch over a throwaway database.
+      - name: Install notmuch
+        run: sudo apt-get update && sudo apt-get install -y notmuch
 
       - name: Byte-compile
         run: make compile EMACSPEAK_DIR="$HOME/emacspeak"
