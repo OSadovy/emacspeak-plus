@@ -315,9 +315,9 @@ modified; the line after the headers is left alone."
 
 ;;;  Tag changes, from their inputs:
 
-(defun emacspeak-plus-notmuch-test--confirm (changes)
-  "Return the confirmation for CHANGES as (ICONS TEXT)."
-  (let ((speech (emacspeak-plus-notmuch--tag-confirmation changes)))
+(defun emacspeak-plus-notmuch-test--confirm (changes &optional noun)
+  "Return the confirmation for CHANGES to NOUNs as (ICONS TEXT)."
+  (let ((speech (emacspeak-plus-notmuch--tag-confirmation changes noun)))
     (list (plist-get speech :icons) (plist-get speech :text))))
 
 (ert-deftest emacspeak-plus-notmuch-test-tag-confirmations ()
@@ -343,6 +343,27 @@ modified; the line after the headers is left alone."
     (should (equal '((task-done) "Archived")
                    (emacspeak-plus-notmuch-test--confirm
                     '((("inbox") . ("archived"))))))))
+
+(ert-deftest emacspeak-plus-notmuch-test-tag-confirmation-counts ()
+  "More than one item changed says how many; items left as they were are
+not counted."
+  (let ((notmuch-archive-tags '("-inbox")))
+    (should (equal '((delete-object) "3 threads moved to trash")
+                   (emacspeak-plus-notmuch-test--confirm
+                    '((("inbox") . ("trash")) (("inbox") . ("trash"))
+                      (("inbox" "unread") . ("trash" "unread")))
+                    "thread")))
+    (should (equal '((task-done) "2 messages archived")
+                   (emacspeak-plus-notmuch-test--confirm
+                    '((("inbox") . nil) (("inbox") . nil)) "message")))
+    (should (equal '((task-done) "2 threads: added work; removed unread")
+                   (emacspeak-plus-notmuch-test--confirm
+                    '((("unread") . ("work")) (("unread") . ("work"))
+                      (("work") . ("work")))
+                    "thread")))
+    (should (equal '((task-done) "Archived")
+                   (emacspeak-plus-notmuch-test--confirm
+                    '((("inbox") . nil) (nil . nil)) "thread")))))
 
 ;;;  The search list:
 
@@ -468,6 +489,16 @@ no change, only confirmed."
                     (emacspeak-plus-notmuch-test--icons said)))
      (should (string-match-p "\\`Archived, Alice Example.* 4 messages\\'"
                              (emacspeak-plus-notmuch-test--spoken said))))))
+
+(ert-deftest emacspeak-plus-notmuch-test-search-region-trash ()
+  "Trashing the threads of a region says how many, and stays put."
+  (emacspeak-plus-notmuch-test--with-mail
+   (emacspeak-plus-notmuch-test--search)
+   (let ((notmuch-archive-tags '("+trash" "-inbox")))
+     (should (equal '((icon delete-object) (speak "3 threads moved to trash"))
+                    (emacspeak-plus-notmuch-test--collecting
+                     (notmuch-search-archive-thread
+                      nil (point-min) (point-max))))))))
 
 ;;;  The thread:
 
@@ -711,8 +742,8 @@ back from the new window start to the old one, never past the message."
                    "\n" " " (emacspeak-plus-notmuch-test--spoken said)))))))))
 
 (ert-deftest emacspeak-plus-notmuch-test-space-to-end-and-archive ()
-  "Space at the last message goes to the empty last line, then archives and
-opens the next thread."
+  "Space at the last message goes to the empty last line, then archives the
+messages still in the inbox and opens the next thread."
   (emacspeak-plus-notmuch-test--with-mail
    (emacspeak-plus-notmuch-test--open-lunch)
    (dotimes (_ 2) (notmuch-show-next-open-message))
@@ -726,7 +757,8 @@ opens the next thread."
                 (notmuch-show-advance-and-archive))))
      (should (equal '(task-done large-movement)
                     (emacspeak-plus-notmuch-test--icons said)))
-     (should (equal (format "Archived, Dave Example %s\nNothing new here.\n"
+     (should (equal (format (concat "3 messages archived, Dave Example %s\n"
+                                    "Nothing new here.\n")
                             (emacspeak-plus-notmuch-test--date "m6"))
                     (emacspeak-plus-notmuch-test--spoken said))))))
 

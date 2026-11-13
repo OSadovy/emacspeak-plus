@@ -53,7 +53,8 @@
 ;; nearly every one.
 ;; @item Dates are spoken in words, and those notmuch shows as ISO dates are
 ;; pronounced as dates.
-;; @item Tagging and archiving say what changed, then where point landed.
+;; @item Tagging and archiving say what changed, and to how many threads or
+;; messages where it was more than one, then where point landed.
 ;; @item A command that could not move plays the warning icon and says
 ;; nothing.
 ;; @item Tags the search requires go unsaid in its rows.
@@ -497,23 +498,27 @@ This cuts off whatever was being read: it answers the key just pressed."
 
 (defvar emacspeak-plus-notmuch--tagging nil
   "While a reported command runs, (ASKED . CHANGES), else nil.
-ASKED is non-nil once tagging has been asked for.  CHANGES lists each
+ASKED is non-nil once tagging has been asked for, and once a tag has been
+set, what was tagged: \"thread\" or \"message\".  CHANGES lists each
 item's tags as (BEFORE . AFTER).")
 
 (defun emacspeak-plus-notmuch--note-tagging (&rest _)
   "Note that the command running has asked for tags to change."
-  (when emacspeak-plus-notmuch--tagging
+  (when (and emacspeak-plus-notmuch--tagging
+             (not (car emacspeak-plus-notmuch--tagging)))
     (setcar emacspeak-plus-notmuch--tagging t)))
 
 (defun emacspeak-plus-notmuch--note-search-tags (tags &optional pos)
   "Note a search row at POS, or point, having its tags set to TAGS."
   (when emacspeak-plus-notmuch--tagging
+    (setcar emacspeak-plus-notmuch--tagging "thread")
     (push (cons (notmuch-search-get-tags pos) tags)
           (cdr emacspeak-plus-notmuch--tagging))))
 
 (defun emacspeak-plus-notmuch--note-show-tags (tags)
   "Note the message at point having its tags set to TAGS."
   (when emacspeak-plus-notmuch--tagging
+    (setcar emacspeak-plus-notmuch--tagging "message")
     (push (cons (notmuch-show-get-tags) tags)
           (cdr emacspeak-plus-notmuch--tagging))))
 
@@ -535,9 +540,17 @@ item's tags as (BEFORE . AFTER).")
   (let ((text (string-join clauses "; ")))
     (concat (upcase (substring text 0 1)) (substring text 1))))
 
-(defun emacspeak-plus-notmuch--tag-confirmation (changes)
-  "Return the confirmation for CHANGES, a list of (BEFORE . AFTER) tags."
-  (let (added removed)
+(defun emacspeak-plus-notmuch--tag-confirmation (changes &optional noun)
+  "Return the confirmation for CHANGES, a list of (BEFORE . AFTER) tags.
+Where more than one of the items, each a NOUN, changed, it says how many.
+notmuch sets a search row's tags whether or not they change, and a
+message's only when they do, so the items are counted by comparing."
+  (let* ((changed (cl-count-if (lambda (change)
+                                 (not (equal (car change) (cdr change))))
+                               changes))
+         (count (when (and noun (> changed 1))
+                  (emacspeak-plus-notmuch--count changed noun)))
+         added removed)
     (pcase-dolist (`(,before . ,after) changes)
       (dolist (tag after)
         (unless (member tag before) (cl-pushnew tag added :test #'equal)))
@@ -548,25 +561,31 @@ item's tags as (BEFORE . AFTER).")
       (cond
        ((not (or added removed)) (emacspeak-plus-notmuch--unchanged))
        ((member "trash" added)
-        (emacspeak-plus-notmuch--speech '(delete-object) "Moved to trash"))
+        (emacspeak-plus-notmuch--speech
+         '(delete-object)
+         (if count (concat count " moved to trash") "Moved to trash")))
        ((and removed
              (cl-subsetp removed (car archive) :test #'equal)
              (cl-subsetp added (cdr archive) :test #'equal))
-        (emacspeak-plus-notmuch--speech '(task-done) "Archived"))
-       (t
         (emacspeak-plus-notmuch--speech
-         '(task-done)
-         (emacspeak-plus-notmuch--sentence
-          (delq nil
-                (list
-                 (when added
-                   (concat "Added "
-                           (mapconcat #'emacspeak-plus-notmuch--tag-word
-                                      added ", ")))
-                 (when removed
-                   (concat "removed "
-                           (mapconcat #'emacspeak-plus-notmuch--tag-word
-                                      removed ", "))))))))))))
+         '(task-done) (if count (concat count " archived") "Archived")))
+       (t
+        (let ((clauses
+               (delq nil
+                     (list
+                      (when added
+                        (concat "added "
+                                (mapconcat #'emacspeak-plus-notmuch--tag-word
+                                           added ", ")))
+                      (when removed
+                        (concat "removed "
+                                (mapconcat #'emacspeak-plus-notmuch--tag-word
+                                           removed ", ")))))))
+          (emacspeak-plus-notmuch--speech
+           '(task-done)
+           (if count
+               (concat count ": " (string-join clauses "; "))
+             (emacspeak-plus-notmuch--sentence clauses)))))))))
 
 ;;;  Reporting:
 
@@ -626,7 +645,9 @@ BEFORE is the state from `emacspeak-plus-notmuch--snapshot'."
          (moved (or elsewhere (/= (point) (plist-get before :point))))
          (confirmation (when (car emacspeak-plus-notmuch--tagging)
                          (emacspeak-plus-notmuch--tag-confirmation
-                          (cdr emacspeak-plus-notmuch--tagging)))))
+                          (cdr emacspeak-plus-notmuch--tagging)
+                          (let ((noun (car emacspeak-plus-notmuch--tagging)))
+                            (when (stringp noun) noun))))))
     (pcase kind
       ('hello
        (let ((icon (if (eq this-command 'notmuch-bury-or-kill-this-buffer)
