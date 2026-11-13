@@ -36,6 +36,8 @@
 ;; when the search finishes.  Refreshing, filtering and re-sorting open a search anew.
 ;; @item Leaving a thread for the list speaks the row landed on, and for
 ;; another thread its message, as if opened.
+;; @item When notmuch-live takes the row at point out of its list, the row
+;; point moved to is spoken after whatever the command said.
 ;; @item Tab on a search on the start page says its name and count.
 ;; @item Landing on a message in a thread speaks its status icons, from,
 ;; date, the subject where it differs from the thread's, and how many
@@ -458,13 +460,14 @@ BODY is as for `emacspeak-plus-notmuch--landing'."
 
 ;;;  Speaking:
 
-(defun emacspeak-plus-notmuch--say (speech &optional prefix)
+(defun emacspeak-plus-notmuch--say (speech &optional prefix queue)
   "Speak SPEECH, a value from `emacspeak-plus-notmuch--speech'.
 PREFIX, of the same shape, goes first: its icons with SPEECH's, and its
 words before SPEECH's.  SPEECH may also be `line', for the line at point,
 an empty one sounding the empty-line tone.
 
-This cuts off whatever was being read: it answers the key just pressed."
+This cuts off whatever was being read, as it answers the key just
+pressed, unless QUEUE: then it follows it, and SPEECH may not be `line'."
   (let* ((line (when (eq speech 'line)
                  (buffer-substring (line-beginning-position)
                                    (line-end-position))))
@@ -476,7 +479,7 @@ This cuts off whatever was being read: it answers the key just pressed."
                                     (unless (string-empty-p line) line)
                                   (plist-get speech :text))))
                 ", "))
-         (dtk-stop-immediately t))
+         (dtk-stop-immediately (not queue)))
     (mapc #'emacspeak-icon icons)
     (cond
      ;; Emacspeak's own reading, with all its cues; it stops speech first,
@@ -1063,6 +1066,25 @@ A search the row was never spoken for says the count and then the row."
                (emacspeak-plus-notmuch--speech nil count))))))))))
 
 (add-hook 'notmuch-search-mode-hook #'emacspeak-plus-notmuch--search-started)
+
+;; notmuch-live takes a thread's row out of its list once the thread no
+;; longer matches, after the command that changed it has been spoken; when
+;; the row was point's, point is on the next one, unannounced.
+
+(defun emacspeak-plus-notmuch--row-removed ()
+  "Speak the row point was moved to when its own left the list."
+  (when (and (derived-mode-p 'notmuch-search-mode)
+             (emacspeak-plus-notmuch--foreground-p))
+    (emacspeak-plus-notmuch--say
+     (if-let* ((row (emacspeak-plus-notmuch--row-at-point)))
+         (emacspeak-plus-notmuch--arrive row)
+       ;; Past the last row, on notmuch's closing line.
+       (emacspeak-plus-notmuch--speech
+        nil (string-trim (buffer-substring (line-beginning-position)
+                                           (line-end-position)))))
+     nil t)))
+
+(add-hook 'notmuch-live-row-removed-hook #'emacspeak-plus-notmuch--row-removed)
 (advice-add 'notmuch-search-process-filter :after
             #'emacspeak-plus-notmuch--after-search-output)
 (advice-add 'notmuch-search-process-sentinel :after

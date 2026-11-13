@@ -500,6 +500,42 @@ no change, only confirmed."
                      (notmuch-search-archive-thread
                       nil (point-min) (point-max))))))))
 
+;;;  A row taken out by notmuch-live:
+
+;; notmuch-live runs its hook once it has taken point's row out and put
+;; point on the next.  Taking rows out is notmuch-live's, tested there.
+
+(defun emacspeak-plus-notmuch-test--row-removed ()
+  "Run notmuch-live's hook; return what was said, each with whether it
+stopped speech first."
+  (let (said)
+    (cl-letf (((symbol-function 'dtk-speak)
+               (lambda (text &rest _)
+                 (push (list 'speak (substring-no-properties text)
+                             dtk-stop-immediately)
+                       said)))
+              ((symbol-function 'emacspeak-icon)
+               (lambda (icon) (push (list 'icon icon) said))))
+      (run-hooks 'notmuch-live-row-removed-hook))
+    (nreverse said)))
+
+(ert-deftest emacspeak-plus-notmuch-test-row-removed-speaks-next-row ()
+  "The row point was moved to is spoken after what was being said."
+  (emacspeak-plus-notmuch-test--with-mail
+   (emacspeak-plus-notmuch-test--search)
+   (set-window-buffer (selected-window) (current-buffer))
+   (goto-char (point-min))
+   (while (not (equal (plist-get (notmuch-search-get-result) :subject) "Old news"))
+     (forward-line))
+   (should (equal `((icon button) (speak ,(emacspeak-plus-notmuch-test--dave) nil))
+                  (emacspeak-plus-notmuch-test--row-removed)))
+   (goto-char (point-max))
+   (forward-line -1)
+   (should (equal '((speak "End of search results." nil))
+                  (emacspeak-plus-notmuch-test--row-removed)))
+   (set-window-buffer (selected-window) (get-buffer-create "*elsewhere*"))
+   (should-not (emacspeak-plus-notmuch-test--row-removed))))
+
 ;;;  The thread:
 
 (ert-deftest emacspeak-plus-notmuch-test-opening-thread ()
