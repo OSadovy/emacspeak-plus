@@ -3194,6 +3194,16 @@ nil where there is no message to mention anybody, as for a reaction."
       (emacspeak-plus-telega--chat-focused-p chat)
       (and msg (plist-get msg :contains_unread_mention) t)))
 
+;; Telegram keeps delivering a public group that was opened but never joined
+;; -- a channel's comments -- after its buffer is gone: TDLib fills gaps in
+;; any chat opened since it started, and each fill tells the server to go on
+;; pushing.  Telega's own notifications pass such a group over as well.
+(defun emacspeak-plus-telega--chat-followed-p (chat)
+  "Return non-nil if CHAT is a conversation you are in, or have open.
+Bots are named because telega gives them a chat type of their own."
+  (or (telega-chat-match-p chat '(or (type private secret bot) me-is-member))
+      (and (emacspeak-plus-telega--chat-buffer chat) t)))
+
 (defun emacspeak-plus-telega--call-in-chatbuf (chat fn)
   "Call FN with CHAT's buffer current, or where we are if it has none.
 
@@ -3345,6 +3355,7 @@ says the message names you."
          (< (- (telega-time-seconds) (or (plist-get msg :date) 0))
             emacspeak-plus-telega--stale-after)
          (emacspeak-plus-telega--chat-in-scope-p chat)
+         (emacspeak-plus-telega--chat-followed-p chat)
          (emacspeak-plus-telega--mute-allows-p chat msg))))
 
 (defun emacspeak-plus-telega--message-arrived (msg)

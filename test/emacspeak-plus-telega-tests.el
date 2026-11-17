@@ -130,6 +130,40 @@ repeats the chat."
         (should (eq 'none icon))
         (should (equal "Work Chat, Bob" spoken))))))
 
+;;;  Which chats an arrival is announced from:
+
+(defun emacspeak-plus-telega-test--arrival-icon (followed buffer)
+  "Return the icon a message arriving in every-chat scope sounds.
+FOLLOWED is what telega answers to whether you are in the chat, BUFFER
+the chat's buffer if it has one."
+  (let ((chat emacspeak-plus-telega-test--chat))
+    (cl-letf (((symbol-function 'telega-msg-chat) (lambda (_ &optional _) chat))
+              ((symbol-function 'telega-msg-match-p) (lambda (_ _) nil))
+              ((symbol-function 'telega-chat-match-p) (lambda (_ _) followed))
+              ((symbol-function 'telega-chat-muted-p) (lambda (_) nil))
+              ((symbol-function 'telega-time-seconds) (lambda (&optional _) 100))
+              (telega--chat-buffers-alist (when buffer (list (cons chat buffer))))
+              (emacspeak-plus-telega-speak-incoming 'all)
+              (emacspeak-plus-telega-incoming-style 'icon)
+              (emacspeak-plus-telega-message-icon 'new-mail))
+      (emacspeak-plus-telega-test--collecting spoken icon
+        (emacspeak-plus-telega--message-arrived '(:id 1 :date 100))
+        icon))))
+
+(ert-deftest emacspeak-plus-telega-test-unjoined-chat-is-silent ()
+  "A group opened once and closed, never joined, does not announce."
+  (should (eq 'none (emacspeak-plus-telega-test--arrival-icon nil nil))))
+
+(ert-deftest emacspeak-plus-telega-test-unjoined-chat-announces-while-open ()
+  "A channel's comments being read announce what arrives in them."
+  (with-temp-buffer
+    (should (eq 'new-mail (emacspeak-plus-telega-test--arrival-icon
+                           nil (current-buffer))))))
+
+(ert-deftest emacspeak-plus-telega-test-followed-chat-announces ()
+  "A chat you are in announces with no buffer open."
+  (should (eq 'new-mail (emacspeak-plus-telega-test--arrival-icon t nil))))
+
 ;;;  Choosing an icon:
 
 (ert-deftest emacspeak-plus-telega-test-icon-names-come-from-the-theme ()
