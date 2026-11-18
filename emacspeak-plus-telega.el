@@ -136,6 +136,88 @@ PLURAL defaults to SINGULAR with an \"s\"."
   (format "%d %s" count
           (if (= count 1) singular (or plural (concat singular "s")))))
 
+;;;  Voicing the parts of a line
+
+;; A message, a chat or a folder is spoken as a run of parts, told apart by
+;; voice, one voice for each kind of part wherever it is said:
+;;
+;;   a person's name                      `telega-msg-user-title''s voice
+;;   a chat's or a topic's name           `voice-bolden-medium'
+;;   a folder's name                      `voice-bolden-extra', apart from
+;;                                        the chats listed under it
+;;   a chat's kind: group, channel, bot   `voice-annotate'
+;;   dates and counts                     `voice-animate'
+;;   states: unread, edited, muted, read  `voice-smoothen'
+;;
+;; What people wrote stays in the plain voice.  A `personality' laid over it
+;; would replace the voices its bold, links and code have through their faces.
+
+(defun emacspeak-plus-telega--in-voice (personality text)
+  "Return TEXT in PERSONALITY, or nil when TEXT is nil or empty."
+  (when (and text (not (string-empty-p text)))
+    (propertize text 'personality personality)))
+
+(defun emacspeak-plus-telega--name (text)
+  "Return TEXT, somebody's name, in the voice telega's names are read in."
+  (emacspeak-plus-telega--in-voice
+   (voice-setup-get-voice-for-face 'telega-msg-user-title) text))
+
+(defun emacspeak-plus-telega--title (text)
+  "Return TEXT, the name of a chat or topic, in its voice."
+  (emacspeak-plus-telega--in-voice 'voice-bolden-medium text))
+
+(defun emacspeak-plus-telega--folder (text)
+  "Return TEXT, the name of a folder, in its voice."
+  (emacspeak-plus-telega--in-voice 'voice-bolden-extra text))
+
+(defun emacspeak-plus-telega--kind (text)
+  "Return TEXT, the kind of chat something is, in its voice."
+  (emacspeak-plus-telega--in-voice 'voice-annotate text))
+
+(defun emacspeak-plus-telega--measure (text)
+  "Return TEXT, a date or a count, in its voice."
+  (emacspeak-plus-telega--in-voice 'voice-animate text))
+
+(defun emacspeak-plus-telega--state (text)
+  "Return TEXT, a state such as unread or edited, in its voice."
+  (emacspeak-plus-telega--in-voice 'voice-smoothen text))
+
+(defun emacspeak-plus-telega--voice-at (text pos)
+  "Return the voice TEXT is spoken in at POS, found as `dtk-get-style' would."
+  (or (get-text-property pos 'personality text)
+      (dtk-get-voice-for-face (get-text-property pos 'face text))))
+
+(defun emacspeak-plus-telega--join (parts)
+  "Return PARTS as one line of speech, leaving out the nil and empty ones.
+
+Two parts in different voices are separated by a space, and two in the
+same voice by a comma.  ru_tts speaks each run of one voice as an
+utterance of its own, so a change of voice is already a pause and a comma
+beside it would be a second one; where the voice does not change, nothing
+but the comma marks the seam.
+
+The separator takes the voice of the part before it.  Emacspeak sends
+every run of one voice separately, a plain comma or space included, so a
+plain separator would cut one voice's run in two."
+  (let ((parts (seq-remove (lambda (part) (or (null part) (string-empty-p part)))
+                           parts)))
+    (if (null parts)
+        ""
+      (let ((line (car parts)))
+        (dolist (part (cdr parts) line)
+          (let* ((last (1- (length line)))
+                 (separator (if (equal (emacspeak-plus-telega--voice-at line last)
+                                       (emacspeak-plus-telega--voice-at part 0))
+                                ", "
+                              " ")))
+            (setq line
+                  (concat line
+                          (propertize separator
+                                      'personality (get-text-property
+                                                    last 'personality line)
+                                      'face (get-text-property last 'face line))
+                          part))))))))
+
 (defun emacspeak-plus-telega--read-date (msg)
   "Return when MSG was read as a phrase, or nil if that is not to be had."
   (when (and emacspeak-plus-telega-speak-read-date
@@ -194,11 +276,11 @@ answered a message, which is the one thing the chips are there to say."
                                        (emacspeak-plus-telega--reaction-emoji
                                         (plist-get reaction :type))))))
                          reactions))))
-      (string-join
-       (append (when mine
-                 (list (concat "you reacted with " (string-join mine ", "))))
-               counts)
-       ", "))))
+      (emacspeak-plus-telega--join
+       (cons (when mine
+               (emacspeak-plus-telega--state
+                (concat "you reacted with " (string-join mine ", "))))
+             (mapcar #'emacspeak-plus-telega--measure counts))))))
 
 (defun emacspeak-plus-telega--listened-annotation (msg)
   "Return whether MSG, a voice or video note, has been played.
@@ -250,24 +332,25 @@ it yet."
     ;; Being addressed by name is why a chat asked for attention in the first
     ;; place, and once the chat is open nothing else says which message did it.
     (when (plist-get msg :contains_unread_mention)
-      (push "mentions you" annotations))
+      (push (emacspeak-plus-telega--state "mentions you") annotations))
     ;; Telega's own word, and telega's own language.
     (unless (telega-zerop (or (plist-get msg :edit_date) 0))
-      (push (telega-i18n "lng_edited") annotations))
+      (push (emacspeak-plus-telega--state (telega-i18n "lng_edited"))
+            annotations))
     ;; A message that never left looks exactly like one that did: the prompt
     ;; empties either way, and the failure was announced once, at the time.
     (when (telega-msg-match-p msg 'is-failed-to-send)
-      (push "not sent" annotations))
+      (push (emacspeak-plus-telega--state "not sent") annotations))
     (when (plist-get msg :scheduling_state)
-      (push "scheduled" annotations))
+      (push (emacspeak-plus-telega--state "scheduled") annotations))
     (when (plist-get msg :self_destruct_type)
-      (push "self destructing" annotations))
+      (push (emacspeak-plus-telega--state "self destructing") annotations))
     (when (telega-msg-match-p msg 'is-pinned)
-      (push "pinned" annotations))
+      (push (emacspeak-plus-telega--state "pinned") annotations))
     (when (telega-msg-favorite-p msg)
-      (push "favorite" annotations))
+      (push (emacspeak-plus-telega--state "favorite") annotations))
     (when-let* ((played (emacspeak-plus-telega--listened-annotation msg)))
-      (push played annotations))
+      (push (emacspeak-plus-telega--state played) annotations))
     ;; A transcript is the one thing about a note that can be read rather than
     ;; listened to, and `telega-ins--content-one-line' leaves it out entirely,
     ;; so a transcribed note and an untranscribed one sounded identical.
@@ -280,24 +363,33 @@ it yet."
                 (telega-ins--speech-recognition-text recognition))))
             annotations))
     (when (> views 0)
-      (push (format "seen %s" (emacspeak-plus-telega--count views "time")) annotations))
+      (push (emacspeak-plus-telega--measure
+             (format "seen %s" (emacspeak-plus-telega--count views "time")))
+            annotations))
     (when (> forwards 0)
-      (push (format "forwarded %s" (emacspeak-plus-telega--count forwards "time"))
+      (push (emacspeak-plus-telega--measure
+             (format "forwarded %s"
+                     (emacspeak-plus-telega--count forwards "time")))
             annotations))
     (when (> replies 0)
-      (push (emacspeak-plus-telega--count replies "reply" "replies") annotations))
+      (push (emacspeak-plus-telega--measure
+             (emacspeak-plus-telega--count replies "reply" "replies"))
+            annotations))
     (when-let* ((reactions (emacspeak-plus-telega--reaction-summary msg)))
       (push reactions annotations))
     ;; Which of your messages the chat's reaction badge is pointing at.
     (when (> new-reactions 0)
-      (push (emacspeak-plus-telega--count new-reactions "new reaction") annotations))
+      (push (emacspeak-plus-telega--measure
+             (emacspeak-plus-telega--count new-reactions "new reaction"))
+            annotations))
     (when (and chat
                (telega-chat-private-p chat)
                (plist-get msg :is_outgoing))
-      (push (if (>= (or (plist-get chat :last_read_outbox_message_id) 0)
-                    (plist-get msg :id))
-                (or (emacspeak-plus-telega--read-date msg) "read")
-              "sent")
+      (push (emacspeak-plus-telega--state
+             (if (>= (or (plist-get chat :last_read_outbox_message_id) 0)
+                     (plist-get msg :id))
+                 (or (emacspeak-plus-telega--read-date msg) "read")
+               "sent"))
             annotations))
     (nreverse annotations)))
 
@@ -351,7 +443,7 @@ answers correctly: with no topic to name there is nothing to say."
               ((telega-msg-match-p msg telega-msg-temex-show-topic))
               (title (emacspeak-plus-telega--topic-title topic))
               ((not (string-empty-p title))))
-    (format "in %s" title)))
+    (concat "in " (emacspeak-plus-telega--title title))))
 
 (defun emacspeak-plus-telega--without-images (text)
   "Return TEXT with telega's stand-in for an undrawable image taken out.
@@ -384,7 +476,9 @@ one thing about it that must not be got wrong."
   (when-let* ((fwd-info (plist-get msg :forward_info)))
     (if-let* ((origin (plist-get fwd-info :origin))
               (sender (telega--msg-origin-sender origin)))
-        (format "forwarded from %s" (emacspeak-plus-telega--sender-title sender))
+        (concat "forwarded from "
+                (emacspeak-plus-telega--name
+                 (emacspeak-plus-telega--sender-title sender)))
       "forwarded")))
 
 (defun emacspeak-plus-telega--reply-to-thread-root-p (reply-to)
@@ -417,7 +511,9 @@ guessed from the reply itself."
            (sender (cond (origin (telega--msg-origin-sender origin))
                          ((telega-msg-p replied) (telega-msg-sender replied)))))
       (if sender
-          (format "replies to %s" (emacspeak-plus-telega--sender-title sender))
+          (concat "replies to "
+                  (emacspeak-plus-telega--name
+                   (emacspeak-plus-telega--sender-title sender)))
         ;; The replied-to message is still being fetched, or is gone.  That
         ;; this is a reply is worth saying even when who to is not known yet.
         "replies to a message"))))
@@ -451,7 +547,7 @@ chat being read is in the chatbuf's mode line instead, on demand."
   (when-let* ((chat (telega-msg-chat msg 'offline))
               ((not (derived-mode-p 'telega-chat-mode)))
               ((emacspeak-plus-telega--unread-p msg chat)))
-    "unread"))
+    (emacspeak-plus-telega--state "unread")))
 
 (defvar-local emacspeak-plus-telega--last-sender nil
   "Title of the sender spoken last in this buffer.
@@ -510,28 +606,26 @@ has not been read -- and saying either of them is saying nothing."
                                       emacspeak-plus-telega--last-chat-title))))
       (setq emacspeak-plus-telega--last-sender title
             emacspeak-plus-telega--last-chat-title chat-title)
-      (string-join
-       (seq-remove
-        #'string-empty-p
-        (append
-         (list (if arriving "" (or (emacspeak-plus-telega--unread-annotation msg) ""))
-               (or chat-title "")
-               (if (or same-sender-p sender-repeats-chat-p (null title))
-                   "" title)
-               ;; These all come before the content, being what the content
-               ;; has to be understood against rather than remarks about it;
-               ;; heard afterwards they arrive too late to help.  Where a
-               ;; forward came from follows who sent it, as telega draws it
-               ;; and as it reads: this person passed on that person's words.
-               (or (emacspeak-plus-telega--forward-annotation msg) "")
-               (or (emacspeak-plus-telega--topic-annotation msg) "")
-               (or (emacspeak-plus-telega--reply-annotation msg) "")
-               (or (emacspeak-plus-telega--content msg) "")
-               (if (and (not arriving) (plist-get msg :date))
-                   (emacspeak-plus-telega--timestamp (plist-get msg :date))
-                 ""))
-         (emacspeak-plus-telega--msg-annotations msg)))
-       ", "))))
+      (emacspeak-plus-telega--join
+       (append
+        (list (unless arriving (emacspeak-plus-telega--unread-annotation msg))
+              (emacspeak-plus-telega--title chat-title)
+              (unless (or same-sender-p sender-repeats-chat-p)
+                (emacspeak-plus-telega--name title))
+              ;; These all come before the content, being what the content
+              ;; has to be understood against rather than remarks about it;
+              ;; heard afterwards they arrive too late to help.  Where a
+              ;; forward came from follows who sent it, as telega draws it
+              ;; and as it reads: this person passed on that person's words.
+              (emacspeak-plus-telega--forward-annotation msg)
+              (emacspeak-plus-telega--topic-annotation msg)
+              (emacspeak-plus-telega--reply-annotation msg)
+              (emacspeak-plus-telega--content msg)
+              (when-let* (((not arriving))
+                          (date (plist-get msg :date)))
+                (emacspeak-plus-telega--measure
+                 (emacspeak-plus-telega--timestamp date))))
+        (emacspeak-plus-telega--msg-annotations msg))))))
 
 (defun emacspeak-plus-telega--chat-kind (chat)
   "Return what kind of thing CHAT is, or nil when saying would add nothing.
@@ -553,30 +647,27 @@ read to decide what to open."
         (mentions (or (plist-get chat :unread_mention_count) 0))
         (reactions (or (plist-get chat :unread_reaction_count) 0))
         (last-msg (plist-get chat :last_message)))
-    (string-join
-     (seq-remove
-      #'string-empty-p
-      (list
-       (substring-no-properties (telega-chat-title chat))
-       (or (emacspeak-plus-telega--chat-kind chat) "")
-       (if (> unread 0)
-           (emacspeak-plus-telega--count unread "unread message")
-         "")
-       (if (> mentions 0)
-           (emacspeak-plus-telega--count mentions "mention")
-         "")
-       ;; Someone reacting to your message is often the whole of their reply,
-       ;; so a chat holding one you have not seen is a chat with something in
-       ;; it -- and unlike an unread message, nothing else here would say so.
-       (if (> reactions 0)
-           (emacspeak-plus-telega--count reactions "unread reaction")
-         "")
-       (if (telega-chat-muted-p chat) "muted" "")
-       (if last-msg
-           (emacspeak-plus-telega--content
-            last-msg emacspeak-plus-telega-chat-list-preview-length)
-         "")))
-     ", ")))
+    (emacspeak-plus-telega--join
+     (list
+      (emacspeak-plus-telega--title (substring-no-properties (telega-chat-title chat)))
+      (emacspeak-plus-telega--kind (emacspeak-plus-telega--chat-kind chat))
+      (when (> unread 0)
+        (emacspeak-plus-telega--measure
+         (emacspeak-plus-telega--count unread "unread message")))
+      (when (> mentions 0)
+        (emacspeak-plus-telega--measure
+         (emacspeak-plus-telega--count mentions "mention")))
+      ;; Someone reacting to your message is often the whole of their reply,
+      ;; so a chat holding one you have not seen is a chat with something in
+      ;; it -- and unlike an unread message, nothing else here would say so.
+      (when (> reactions 0)
+        (emacspeak-plus-telega--measure
+         (emacspeak-plus-telega--count reactions "unread reaction")))
+      (when (telega-chat-muted-p chat)
+        (emacspeak-plus-telega--state "muted"))
+      (when last-msg
+        (emacspeak-plus-telega--content
+         last-msg emacspeak-plus-telega-chat-list-preview-length))))))
 
 (defun emacspeak-plus-telega--link-description (link)
   "Return LINK, a `:telega-link' property value, as a phrase.
@@ -692,49 +783,51 @@ line's place.  `t x' on a translated message was 0% heard before this."
         (mentions (or (plist-get topic :unread_mention_count) 0))
         (reactions (or (plist-get topic :unread_reaction_count) 0))
         (total (plist-get topic :telega_message_count)))
-    (string-join
-     (seq-remove
-      #'string-empty-p
-      (list
-       ;; The icon has to be turned off by name.  Binding `telega-use-images'
-       ;; nil does not remove an image that carries no text of its own; it
-       ;; substitutes a placeholder for it.
+    (emacspeak-plus-telega--join
+     (list
+      ;; The icon has to be turned off by name.  Binding `telega-use-images'
+      ;; nil does not remove an image that carries no text of its own; it
+      ;; substitutes a placeholder for it.
+      (emacspeak-plus-telega--title
        (substring-no-properties
         (let ((telega-use-images nil))
           (telega-ins--as-string
-           (telega-ins--topic-title topic :with-icon-p nil))))
-       (if (> unread 0) (emacspeak-plus-telega--count unread "unread message") "")
-       (if (> mentions 0) (emacspeak-plus-telega--count mentions "mention") "")
-       (if (> reactions 0)
-           (emacspeak-plus-telega--count reactions "unread reaction") "")
-       ;; What telega falls back to when there is nothing unread to show.
-       (if (and (zerop unread) (zerop mentions) (zerop reactions) total)
-           (emacspeak-plus-telega--count total "message") "")
-       (if (telega-topic-muted-p topic) "muted" "")
+           (telega-ins--topic-title topic :with-icon-p nil)))))
+      (when (> unread 0)
+        (emacspeak-plus-telega--measure
+         (emacspeak-plus-telega--count unread "unread message")))
+      (when (> mentions 0)
+        (emacspeak-plus-telega--measure
+         (emacspeak-plus-telega--count mentions "mention")))
+      (when (> reactions 0)
+        (emacspeak-plus-telega--measure
+         (emacspeak-plus-telega--count reactions "unread reaction")))
+      ;; What telega falls back to when there is nothing unread to show.
+      (when (and (zerop unread) (zerop mentions) (zerop reactions) total)
+        (emacspeak-plus-telega--measure
+         (emacspeak-plus-telega--count total "message")))
+      (when (telega-topic-muted-p topic)
+        (emacspeak-plus-telega--state "muted"))
        ;; The last message, rendered the way a chat row's is, so that a topic
        ;; and a chat are described in the same words.  Telega's own
        ;; `telega-ins--topic-status' is what is on screen, but it lays the
        ;; sender, the text and the time out for the eye and leaves the
        ;; stand-in text of anything it could not draw in the middle of them.
-       (if-let* ((last-msg (plist-get topic :last_message)))
-           (emacspeak-plus-telega--content
-            last-msg emacspeak-plus-telega-chat-list-preview-length)
-         "")))
-     ", ")))
+      (when-let* ((last-msg (plist-get topic :last_message)))
+        (emacspeak-plus-telega--content
+         last-msg emacspeak-plus-telega-chat-list-preview-length))))))
 
 (defun emacspeak-plus-telega--user-summary (user)
   "Return USER, a contact row, as one line of speech.
 Telega draws the online status on a second line that `n' walks past, so it
 is said here or not at all."
-  (string-join
-   (seq-remove
-    #'string-empty-p
-    (list
-     (substring-no-properties (telega-msg-sender-title user))
-     (emacspeak-plus-telega--voiced-text
-      (let ((telega-use-images nil))
-        (telega-ins--as-string (telega-ins--user-status user))))))
-   ", "))
+  (emacspeak-plus-telega--join
+   (list
+    (emacspeak-plus-telega--name
+     (substring-no-properties (telega-msg-sender-title user)))
+    (emacspeak-plus-telega--voiced-text
+     (let ((telega-use-images nil))
+       (telega-ins--as-string (telega-ins--user-status user)))))))
 
 (defun emacspeak-plus-telega--filter-summary (spec)
   "Return SPEC, a custom filter button, as one line of speech."
@@ -743,20 +836,24 @@ is said here or not at all."
                           sum (or (plist-get chat :unread_count) 0)))
          (mentions (cl-loop for chat in chats
                             sum (or (plist-get chat :unread_mention_count) 0))))
-    (string-join
-     (seq-remove
-      #'string-empty-p
-      (list
-       ;; A folder's name carries its icon baked in at the time the row was
-       ;; drawn, so turning images off now cannot help; the properties go.
-       (substring-no-properties (telega-filter--custom-name spec))
-       (emacspeak-plus-telega--count (length chats) "chat")
-       (if (> unread 0) (emacspeak-plus-telega--count unread "unread message") "")
-       (if (> mentions 0) (emacspeak-plus-telega--count mentions "mention") "")
-       ;; Telega draws this as bold, and `telega-button-forward' already
-       ;; skips the inactive ones, so applied is the only state worth saying.
-       (if (telega-filter--custom-active-p spec) "applied" "")))
-     ", ")))
+    (emacspeak-plus-telega--join
+     (list
+      ;; A folder's name carries its icon baked in at the time the row was
+      ;; drawn, so turning images off now cannot help; the properties go.
+      (emacspeak-plus-telega--folder
+       (substring-no-properties (telega-filter--custom-name spec)))
+      (emacspeak-plus-telega--measure
+       (emacspeak-plus-telega--count (length chats) "chat"))
+      (when (> unread 0)
+        (emacspeak-plus-telega--measure
+         (emacspeak-plus-telega--count unread "unread message")))
+      (when (> mentions 0)
+        (emacspeak-plus-telega--measure
+         (emacspeak-plus-telega--count mentions "mention")))
+      ;; Telega draws this as bold, and `telega-button-forward' already
+      ;; skips the inactive ones, so applied is the only state worth saying.
+      (when (telega-filter--custom-active-p spec)
+        (emacspeak-plus-telega--state "applied"))))))
 
 (defun emacspeak-plus-telega--story-summary (story)
   "Return STORY, a story button, as one line of speech.
@@ -764,22 +861,20 @@ is said here or not at all."
 A story still being fetched is nil, and has neither a sender nor a state
 to ask about -- both accessors assert rather than decline.  Telega's own
 one-line renderer does have a branch for it, and says \"loading\"."
-  (string-join
-   (seq-remove
-    #'string-empty-p
-    (list
-     ;; `offline' matters: without it the fallback can block on a server
-     ;; round trip, in the middle of a keystroke.
-     (or (when story
-           (when-let* ((sender (telega-story-sender story 'offline)))
-             (substring-no-properties (telega-msg-sender-title sender))))
-         "")
-     (emacspeak-plus-telega--voiced-text
-      (let ((telega-use-images nil))
-        (telega-ins--as-string
-         (telega-ins--story-content-one-line story))))
-     (if (and story (telega-story-match-p story 'seen)) "seen" "")))
-   ", "))
+  (emacspeak-plus-telega--join
+   (list
+    ;; `offline' matters: without it the fallback can block on a server
+    ;; round trip, in the middle of a keystroke.
+    (when story
+      (when-let* ((sender (telega-story-sender story 'offline)))
+        (emacspeak-plus-telega--name
+         (substring-no-properties (telega-msg-sender-title sender)))))
+    (emacspeak-plus-telega--voiced-text
+     (let ((telega-use-images nil))
+       (telega-ins--as-string
+        (telega-ins--story-content-one-line story))))
+    (when (and story (telega-story-match-p story 'seen))
+      (emacspeak-plus-telega--state "seen")))))
 
 (defvar emacspeak-plus-telega--movement-icon 'button
   "Icon for having arrived somewhere by moving.
@@ -1045,11 +1140,13 @@ described and the question now is which photo this is."
         (within nil))
     (setq within (equal album-id (car emacspeak-plus-telega--last-album)))
     (setq emacspeak-plus-telega--last-album (cons album-id (plist-get msg :id)))
-    (concat (format "item %d of %d, "
+    (emacspeak-plus-telega--join
+     (list (emacspeak-plus-telega--measure
+            (format "item %d of %d"
                     (emacspeak-plus-telega--album-position msgs msg)
-                    (length msgs))
-            (emacspeak-plus-telega--msg-summary
-             (if within msg (emacspeak-plus-telega--album-speaker msgs))))))
+                    (length msgs)))
+           (emacspeak-plus-telega--msg-summary
+            (if within msg (emacspeak-plus-telega--album-speaker msgs)))))))
 
 (cl-loop
  for (fn . backward-p) in '((telega-msg-next)
@@ -3254,18 +3351,16 @@ first."
   "Return CHAT, and MSG's sender where naming them says anything.
 MENTION says the message names you, which is the whole of what a terse
 announcement has to carry about it."
-  (let ((title (substring-no-properties (telega-chat-title chat))))
+  (let ((title (emacspeak-plus-telega--title
+                (substring-no-properties (telega-chat-title chat)))))
     (if mention
-        (format "Mention in %s" title)
-      (string-join
-       (seq-remove
-        #'string-empty-p
-        (list title
-              (or (when (emacspeak-plus-telega--name-sender-p chat msg)
-                    (when-let* ((sender (telega-msg-sender msg)))
-                      (emacspeak-plus-telega--sender-title sender)))
-                  "")))
-       ", "))))
+        (concat "Mention in " title)
+      (emacspeak-plus-telega--join
+       (list title
+             (when (emacspeak-plus-telega--name-sender-p chat msg)
+               (when-let* ((sender (telega-msg-sender msg)))
+                 (emacspeak-plus-telega--name
+                  (emacspeak-plus-telega--sender-title sender)))))))))
 
 (defun emacspeak-plus-telega--arrival-text (msgs mention)
   "Return MSGS arriving as one line of speech.
@@ -3291,17 +3386,14 @@ says the message names you."
                 (unless (emacspeak-plus-telega--name-sender-p chat msg)
                   (when-let* ((sender (telega-msg-sender msg)))
                     (emacspeak-plus-telega--sender-title sender)))))
-           (string-join
-            (seq-remove
-             #'string-empty-p
-             (list (if elsewhere
-                       (substring-no-properties (telega-chat-title chat))
-                     "")
-                   (if (cdr msgs)
-                       (emacspeak-plus-telega--count (length msgs) "item")
-                     "")
-                   (emacspeak-plus-telega--msg-summary msg 'arriving)))
-            ", ")))))))
+           (emacspeak-plus-telega--join
+            (list (when elsewhere
+                    (emacspeak-plus-telega--title
+                     (substring-no-properties (telega-chat-title chat))))
+                  (when (cdr msgs)
+                    (emacspeak-plus-telega--measure
+                     (emacspeak-plus-telega--count (length msgs) "item")))
+                  (emacspeak-plus-telega--msg-summary msg 'arriving)))))))))
 
 (defun emacspeak-plus-telega--speak-arrival (msgs)
   "Announce MSGS having arrived."
@@ -4197,8 +4289,8 @@ order they appear rather than handled a kind at a time."
    ;; `:passive-face', which lands as a real `face' property, so a voice on it
    ;; is heard.
    (telega-reaction-chosen voice-brighten)
-   (telega-msg-self-title voice-annotate)
-   (telega-msg-user-title voice-bolden-extra)
+   (telega-msg-self-title voice-lighten)
+   (telega-msg-user-title voice-lighten)
    (telega-user-online-status voice-bolden-and-animate)
    (telega-user-non-online-status voice-smoothen)))
 

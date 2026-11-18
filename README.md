@@ -232,6 +232,10 @@ Beyond reading what is under point, it covers:
   settings; search; and help and info windows.
 - **Voice and video notes**: how long, where you are in one, and on-demand
   transcription through Telegram.
+- **Parts told apart by voice** rather than by punctuation, one voice for each
+  kind wherever it is said: people's names, chat names, folder names, a chat's
+  kind, dates and counts, and states such as edited or muted. What people wrote
+  stays in the plain voice, with its bold, links and code voiced as usual.
 - **No line-edge cues in a chat.** Every message wraps, so the `left` and
   `right` icons Emacspeak plays at a physical line's edges would sound on
   nearly every arrow key; see [Line edges](#line-edges).

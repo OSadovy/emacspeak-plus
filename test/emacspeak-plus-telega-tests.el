@@ -47,14 +47,77 @@ repeats the chat."
                ((symbol-function 'dtk-speak) (lambda (text) (setq ,spoken text))))
        ,@body)))
 
+;;;  Voices:
+
+(defun emacspeak-plus-telega-test--voices (text)
+  "Return TEXT as (VOICE . RUN) pairs, one for each run of one voice."
+  (let ((pos 0) (runs nil))
+    (while (< pos (length text))
+      (let ((next (next-single-property-change pos 'personality text
+                                               (length text))))
+        (push (cons (get-text-property pos 'personality text)
+                    (substring-no-properties text pos next))
+              runs)
+        (setq pos next)))
+    (nreverse runs)))
+
+(ert-deftest emacspeak-plus-telega-test-join-commas-only-within-a-voice ()
+  "A change of voice separates two parts; the same voice needs a comma.
+The separator stays in the voice before it, so that a voice's run is
+sent whole rather than cut around a comma."
+  (should (equal '((voice-bolden-medium . "Family ")
+                   (voice-animate . "3 unread messages, 1 mention ")
+                   (voice-smoothen . "muted"))
+                 (emacspeak-plus-telega-test--voices
+                  (emacspeak-plus-telega--join
+                   (list (emacspeak-plus-telega--title "Family")
+                         (emacspeak-plus-telega--measure "3 unread messages")
+                         nil
+                         (emacspeak-plus-telega--measure "1 mention")
+                         ""
+                         (emacspeak-plus-telega--state "muted")))))))
+
+(ert-deftest emacspeak-plus-telega-test-join-hears-faces-at-the-seam ()
+  "Message text is voiced by its faces, and those count at the seam."
+  (let ((bold-end (concat "see " (propertize "you" 'face 'bold)))
+        (plain-start "at six"))
+    (should (equal "see you at six, 14:05"
+                   (emacspeak-plus-telega--join
+                    (list bold-end plain-start "14:05"))))))
+
+(ert-deftest emacspeak-plus-telega-test-names-sound-like-telega-names ()
+  "A name in a summary and a name read off the line share one voice."
+  (should (eq (voice-setup-get-voice-for-face 'telega-msg-user-title)
+              (get-text-property 0 'personality
+                                 (emacspeak-plus-telega--name "Bob")))))
+
+(ert-deftest emacspeak-plus-telega-test-chat-row-voices-each-part ()
+  "The chat list row: what the chat is, what waits in it, what was said."
+  (cl-letf (((symbol-function 'telega-chat-title) (lambda (_) "Family"))
+            ((symbol-function 'telega-chat--type) (lambda (_) 'supergroup))
+            ((symbol-function 'telega-chat-muted-p) (lambda (_) t))
+            ((symbol-function 'emacspeak-plus-telega--content)
+             (lambda (_ &optional _) "see you at six")))
+    (should (equal '((voice-bolden-medium . "Family ")
+                     (voice-annotate . "group ")
+                     (voice-animate . "3 unread messages, 1 mention ")
+                     (voice-smoothen . "muted ")
+                     (nil . "see you at six"))
+                   (emacspeak-plus-telega-test--voices
+                    (emacspeak-plus-telega--chat-summary
+                     '(:id 42 :unread_count 3 :unread_mention_count 1
+                       :last_message (:id 1))))))))
+
 ;;;  A terse arrival:
 
 (ert-deftest emacspeak-plus-telega-test-terse-names-chat-and-sender ()
   "In a group both are needed: the chat alone does not say who spoke."
   (emacspeak-plus-telega-test--with-chat nil
-    (should (equal "Work Chat, Bob"
-                   (emacspeak-plus-telega--terse-arrival
-                    emacspeak-plus-telega-test--chat '(:id 1) nil)))))
+    (should (equal '((voice-bolden-medium . "Work Chat ")
+                     (voice-lighten . "Bob"))
+                   (emacspeak-plus-telega-test--voices
+                    (emacspeak-plus-telega--terse-arrival
+                     emacspeak-plus-telega-test--chat '(:id 1) nil))))))
 
 (ert-deftest emacspeak-plus-telega-test-terse-drops-repeated-sender ()
   "A private chat is named after the person, so naming them twice says nothing."
@@ -79,7 +142,7 @@ repeats the chat."
               ((symbol-function 'emacspeak-plus-telega--chat-focused-p)
                (lambda (_) nil))
               (emacspeak-plus-telega-incoming-detail 'terse))
-      (should (equal "Work Chat, Bob"
+      (should (equal "Work Chat Bob"
                      (emacspeak-plus-telega--arrival-text '((:id 1)) nil))))))
 
 (ert-deftest emacspeak-plus-telega-test-terse-spares-the-chat-being-read ()
