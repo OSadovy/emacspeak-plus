@@ -67,6 +67,18 @@
       (load (expand-file-name (cdr suite) (file-name-directory load-file-name))
             nil nil t)))
 
+;; What a test does not collect still reaches Emacspeak -- a notmuch search's
+;; first row is spoken from its process filter -- and Emacspeak would start a
+;; real speech server and play icons through pactl or sox.  Where it finds no
+;; player it writes icons to the server, and with none running
+;; `process-send-string' takes the current buffer's process instead.  So `cat'
+;; stands in for the server, and takes the icons too.
+(require 'dtk-speak)
+(require 'emacspeak-sounds)
+(setq dtk-program (executable-find "cat")
+      emacspeak-play-program nil)
+(dtk-initialize)
+
 (ert-run-tests-batch-and-exit)
 
 ;;; run-tests.el ends here
