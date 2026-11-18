@@ -247,7 +247,7 @@ it, which is what a prompt whose input is itself a valid answer reports."
    (concat
     ;; Voiced as a heading rather than as more candidate text, and with the
     ;; voice `vertico-group-title' already carries on screen.
-    (when group (concat (propertize group 'personality voice-annotate) ", "))
+    (when group (concat (propertize group 'personality 'voice-annotate) ", "))
     (or candidate (emacspeak-plus-vertico--count total))
     (when annotation (concat " " annotation))
     (when (and candidate position) (format " %d of %d" position total)))))

@@ -113,10 +113,10 @@ and the level is said only where the two differ."
       (push (format "level %d" (1+ depth)) parts))
     (concat name
             (when kind-word
-              (concat " " (propertize kind-word 'personality voice-annotate)))
+              (concat " " (propertize kind-word 'personality 'voice-annotate)))
             (when parts
               (propertize (concat ", " (mapconcat #'identity (nreverse parts) ", "))
-                          'personality voice-annotate)))))
+                          'personality 'voice-annotate)))))
 
 ;;;  Reading the outline buffer:
 

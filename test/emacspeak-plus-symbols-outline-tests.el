@@ -74,7 +74,7 @@
   (let ((spoken (emacspeak-plus-symbols-outline--describe
                  "get" "method" 0 nil 1 0)))
     (should-not (get-text-property 0 'personality spoken))
-    (should (eq voice-annotate
+    (should (eq 'voice-annotate
                 (get-text-property (1- (length spoken)) 'personality spoken)))))
 
 ;;;  Commands, against a buffer shaped like the package's:

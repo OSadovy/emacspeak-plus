@@ -52,7 +52,7 @@ Prompts whose typed input is itself a valid answer report this way."
 (ert-deftest emacspeak-plus-vertico-test-format-heading-is-voiced ()
   "The heading carries a personality so it is heard as a heading."
   (let ((spoken (emacspeak-plus-vertico--format "80:x" "harness.el" 1 2 nil)))
-    (should (eq voice-annotate (get-text-property 0 'personality spoken)))
+    (should (eq 'voice-annotate (get-text-property 0 'personality spoken)))
     ;; ... and the candidate after it is not swept up in that voice.
     (should-not (get-text-property (1- (length spoken)) 'personality spoken))))
 
