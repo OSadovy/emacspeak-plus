@@ -46,7 +46,8 @@
 ;;;  Modules:
 
 (defconst emacspeak-plus--modules
-  '(("notmuch" emacspeak-plus-notmuch)
+  '(("elneo-client" emacspeak-plus-elneo)
+    ("notmuch" emacspeak-plus-notmuch)
     ("speed-type" emacspeak-plus-speed-type)
     ("symbols-outline" emacspeak-plus-symbols-outline)
     ("telega" emacspeak-plus-telega)
