@@ -1427,6 +1427,22 @@ said in full."
   (emacspeak-plus-elneo--cycle 'emacspeak-plus-elneo-incoming-detail
                                emacspeak-plus-elneo--incoming-detail-states))
 
+;; elneo has no prefix map to hang this on, as telega's is, so it is left for
+;; the user to bind.  Repeatable, so `repeat-mode' cycles a setting without
+;; the prefix again.
+;;
+;; Filled in place rather than by `defvar-keymap', which expands to `defvar'
+;; and would leave the keys as they were when this file is reloaded.
+(defvar emacspeak-plus-elneo-announce-map (make-sparse-keymap)
+  "Keymap for changing what elneo announces without being asked.")
+
+(pcase-dolist (`(,key . ,command)
+               '(("a" . emacspeak-plus-elneo-cycle-speak-incoming)
+                 ("s" . emacspeak-plus-elneo-cycle-incoming-style)
+                 ("d" . emacspeak-plus-elneo-cycle-incoming-detail)))
+  (keymap-set emacspeak-plus-elneo-announce-map key command)
+  (put command 'repeat-map 'emacspeak-plus-elneo-announce-map))
+
 (defun emacspeak-plus-elneo--announce-incoming (icon text)
   "Announce ICON and TEXT as `emacspeak-plus-elneo-incoming-style' asks."
   (emacspeak-plus-elneo--announce

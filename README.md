@@ -174,7 +174,13 @@ Typing notifications are not reported: elneo does not receive them.
 
 All are prefixed `emacspeak-plus-elneo`. The first three can be cycled by ear
 with `emacspeak-plus-elneo-cycle-speak-incoming`, `-cycle-incoming-style` and
-`-cycle-incoming-detail`, which are bound to nothing.
+`-cycle-incoming-detail`, which are on `a`, `s` and `d` in
+`emacspeak-plus-elneo-announce-map` and repeat under `repeat-mode`. elneo has
+no prefix map of its own to hang that on, so bind it where you like:
+
+```elisp
+(keymap-global-set "C-c e n" emacspeak-plus-elneo-announce-map)
+```
 
 elneo is on no package archive; run it from a checkout. The module loads with
 `elneo-client`.

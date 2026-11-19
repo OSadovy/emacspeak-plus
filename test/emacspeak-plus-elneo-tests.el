@@ -590,6 +590,16 @@ In the draft, elneo still follows the conversation to the end."
     (emacspeak-plus-elneo--sync-changed "home" "error" "timeout")
     (should (equal "Matrix home disconnected" (emacspeak-plus-elneo-test--said)))))
 
+(ert-deftest emacspeak-plus-elneo-test-announce-keys ()
+  "Each setting is on its key, and `repeat-mode' keeps the map after it."
+  (pcase-dolist (`(,key . ,command)
+                 '(("a" . emacspeak-plus-elneo-cycle-speak-incoming)
+                   ("s" . emacspeak-plus-elneo-cycle-incoming-style)
+                   ("d" . emacspeak-plus-elneo-cycle-incoming-detail)))
+    (should (eq command (keymap-lookup emacspeak-plus-elneo-announce-map key)))
+    (should (eq 'emacspeak-plus-elneo-announce-map
+                (get command 'repeat-map)))))
+
 ;;;  Landing where elneo's keys look:
 
 (ert-deftest emacspeak-plus-elneo-test-n-lands-on-media-keys-find ()
