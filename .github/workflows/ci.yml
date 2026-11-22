@@ -43,12 +43,17 @@ jobs:
             (dolist (p '(vertico gptel telega symbols-outline speed-type notmuch))
               (unless (package-installed-p p) (package-install p))))"
 
+      # elneo is on no package archive either.  Its Lisp loads without the
+      # daemon, which nothing here starts.
+      - name: Check out elneo
+        run: git clone --depth 1 https://github.com/aard-fi/elneo.git "$HOME/elneo"
+
       # The notmuch tests drive a real notmuch over a throwaway database.
       - name: Install notmuch
         run: sudo apt-get update && sudo apt-get install -y notmuch
 
       - name: Byte-compile
-        run: make compile EMACSPEAK_DIR="$HOME/emacspeak"
+        run: EMACSLOADPATH="$HOME/elneo/lisp:" make compile EMACSPEAK_DIR="$HOME/emacspeak"
 
       - name: Test
-        run: make test EMACSPEAK_DIR="$HOME/emacspeak"
+        run: EMACSLOADPATH="$HOME/elneo/lisp:" make test EMACSPEAK_DIR="$HOME/emacspeak"

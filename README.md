@@ -76,6 +76,115 @@ packages being covered are loaded.
 
 ## Modules
 
+### `emacspeak-plus-elneo`
+
+Speech for [elneo](https://github.com/aard-fi/elneo), a Matrix client modelled
+on telega. It is spoken the way `emacspeak-plus-telega` speaks telega: the same
+keys walk the same kinds of thing, and a room and a message are described in
+the same shape and the same voices as a chat and a message there.
+
+elneo has no way to walk either of its buffers by item: in the room bar `p`
+cycles the preview style, in a room `p` votes in a poll, and neither binds `n`.
+So this module adds the walking and moves the two displaced keys:
+
+| key | where | what |
+|---|---|---|
+| `n` / `p` | room bar | next / previous room or section header |
+| `P` | room bar | preview style, which was on `p` |
+| `n` / `p` | room | next / previous message |
+| `V` | room | vote in the poll at point, which was on `p` |
+
+In the draft all of these type their letter, as elneo's own keys do.
+
+- **Rooms** read as their full name -- the bar cuts it to 22 characters --
+  then what kind of room it is (direct, space, invite, replaced), the account
+  where the bar mixes several, unread messages and mentions, muted or mentions
+  only, and the last message, truncated. The bar's preview style decides
+  whether that last message is spoken: with `P` set to off it is neither shown
+  nor said.
+- **Messages** read as who sent them, whether they are in a thread, whom they
+  answer, what they say, when, and then what happened to them: names you,
+  edited, pinned, sending, not sent, read by somebody else, and the reactions,
+  yours named and others counted. A run of messages from one person names them
+  once. Text is read as elneo rendered it, so links, bold and code keep their
+  voices; an image, a voice note, a file and a poll are described rather than
+  read as the placeholder drawn under the picture. A poll whose results are
+  hidden until it ends says so rather than counting no votes, and one allowing
+  several answers says how many. A deleted message whose text was revealed
+  reads that text.
+- **Walking** lands on a message's body rather than its time, so `v`, `o`, `s`
+  and `RET` find the picture, voice note or file there.
+- **Opening a room** with unread messages puts point on the first of them, as
+  telega does, rather than in the draft, where `n` and `p` would type; it says
+  how many and reads the message. The room is named when `u` or `@` chose it,
+  and not when it was just heard in the bar. With nothing unread point stays in
+  the draft and its line is read, as telega's prompt is. A room opened for the
+  first time is announced when its history arrives. A room opened to jump to a
+  message lands on that message instead, and says only it.
+- **A thread view** opening says "Thread" and how many replies, as telega's
+  narrowing to a thread does.
+- `p` at the first loaded message fetches older history and steps into it,
+  provided point has not moved meanwhile. In a thread view older replies are
+  fetched before `p` reaches the root.
+- **A room redrawn** -- keys arriving, `y`, `A`, `T`, the daemon restarting --
+  puts a reader back on the message they were on. `C-c C-r` says how many
+  messages it reloaded. A page that fails to load is announced once.
+- **An arrival in the room being read** no longer carries point off the message
+  being read and into the draft: with point on a message, elneo's scroll to the
+  new message is not made. In the draft it still follows the conversation.
+- **What arrives** -- messages, reactions to yours, deletions in the room being
+  read -- is announced as an icon at once and words queued behind what is being
+  read, with the scope, style and detail settings of the telega module. A
+  muted room is heard only when it mentions you. A thread view counts as a
+  buffer of its room, and while one is being read, only its thread is heard. A
+  reaction in a room not being read names the room.
+- **Silent commands** say what they did: sending is confirmed when the server
+  accepts the message, reacting and pinning when the server agrees, a file
+  attached to the draft, and one sent from the draft or from dired once
+  uploaded; the bar's sort, grouping, preview, avatar, account and search
+  settings, and the options menu's sender avatars and trust marks, when they
+  change; `M-p` names the message it is editing; `r` in the bar and
+  `elneo-room-mark-buffer-read` say so once the server has accepted it -- a
+  refusal elneo itself drops, and it goes unsaid; and `C-c C-k`
+  when there was nothing to cancel.
+- **Elsewhere**: an account connecting or disconnecting, the jump to a reply's
+  parent, a verification's progress, emoji and numbers, said once with the
+  account when it ends, the recovery key's buffer appearing (the key is shown
+  only that once; it is not read out), the image viewer's position and file
+  when it opens or moves to another picture, and the settings view appearing.
+
+- **Parts told apart by voice**, in `emacspeak-plus-telega`'s voices: people's
+  names, room names, accounts and the bar's invites in telega's folder voice, a
+  room's or an attachment's kind, dates and counts, and states such as edited,
+  muted or yours. What people wrote stays in the plain voice, with its bold,
+  links and code voiced as usual.
+
+Typing notifications are not reported: elneo does not receive them.
+
+| option | default | |
+|---|---|---|
+| `-speak-incoming` | `visible` | which rooms announce an arrival: the one you are reading, any with a buffer, or all |
+| `-incoming-style` | `both` | an icon, words, or both |
+| `-incoming-detail` | `full` | the whole of a message arriving elsewhere, or `terse` -- the room and who sent it |
+| `-message-icon` | `new-mail` | icon for an arriving message |
+| `-mention-icon` | `voice-mail` | icon for one that names you |
+| `-reaction-icon` | `mark-object` | icon for a reaction to your message |
+| `-preview-length` | `180` | how much of a room's last message to speak in the bar |
+| `-open-at-first-unread` | `t` | land on the first unread message when opening a room |
+
+All are prefixed `emacspeak-plus-elneo`. The first three can be cycled by ear
+with `emacspeak-plus-elneo-cycle-speak-incoming`, `-cycle-incoming-style` and
+`-cycle-incoming-detail`, which are on `a`, `s` and `d` in
+`emacspeak-plus-elneo-announce-map` and repeat under `repeat-mode`. elneo has
+no prefix map of its own to hang that on, so bind it where you like:
+
+```elisp
+(keymap-global-set "C-c e n" emacspeak-plus-elneo-announce-map)
+```
+
+elneo is on no package archive; run it from a checkout. The module loads with
+`elneo-client`.
+
 ### `emacspeak-plus-notmuch`
 
 Speech for [notmuch](https://notmuchmail.org/), the mail reader. It
@@ -437,6 +546,12 @@ directories:
 EMACSLOADPATH=~/src/telega.el: make test
 ```
 
+elneo is on no package archive, so the same goes for it:
+
+```
+EMACSLOADPATH=~/src/elneo/lisp: make compile test
+```
+
 The same goes for notmuch, whose `make install` puts its Emacs files in a
 directory of their own -- `~/.local/share/emacs/site-lisp` under a home prefix:
 
@@ -457,7 +572,7 @@ modules are named and wired, how one replaces an Emacspeak module etc.
 
 ## Related work
 
-Nothing here was written in a vacuum, and three of the six modules owe something
+Nothing here was written in a vacuum, and three of the seven modules owe something
 concrete to work done elsewhere.
 
 - **[emacspeak-support](https://github.com/bartbunting/emacspeak-support)**,
