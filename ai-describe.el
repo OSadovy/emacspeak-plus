@@ -4,7 +4,7 @@
 
 ;; Author: Oleksii Sadovyi <lex.sadovyi@gmail.com>
 ;; Keywords: multimedia, accessibility
-;; Package-Requires: ((emacs "29.1") (gptel "0.9"))
+;; Package-Requires: ((emacs "29.1") (gptel "0.9.9"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -47,12 +47,15 @@
 ;; A resolver is called with one argument, a callback.  It returns non-nil to
 ;; claim point, and then calls the callback exactly once with a plist:
 ;;
-;;   :file     absolute path to a still image, required
-;;   :context  text to send with it -- caption, sender, file name -- or nil
+;;   :file     absolute path to a still image, required; the chat links to a
+;;             copy of it under a name of ai-describe's, never to it
+;;   :context  text to send with it -- caption, sender, file name -- or nil;
+;;             it goes as plain text, its links not followed
 ;;   :name     short string naming the image, used for the buffer name, or nil
 ;;
 ;; Claiming and answering are separate because fetching can be asynchronous:
 ;; telega has to ask Telegram for the full-resolution file and wait for it.
+;; When that fetch fails, the client says why, and the callback is not called.
 
 ;;; Code:
 
@@ -177,8 +180,9 @@ run to many times its length."
 
 Each is called with a callback and returns non-nil if it claims point,
 having arranged for the callback to be called exactly once with a plist
-describing the image, or with nil if it turned out to have nothing.  See
-the Commentary for the plist keys.
+describing the image, or with nil if it turned out to have nothing.  A
+resolver that failed to fetch the image and has said why itself leaves
+the callback uncalled.  See the Commentary for the plist keys.
 
 Order matters: the display-property resolver claims anything Emacs is
 showing, so it belongs last, after the resolvers that know where a
@@ -187,19 +191,33 @@ better copy of that same image lives."
   :group 'ai-describe)
 
 (defvar ai-describe--stash nil
-  "Directory holding images extracted from buffers, or nil before first use.")
+  "Directory holding this session's images, or nil before first use.")
+
+(defvar ai-describe--stashed nil
+  "Files `ai-describe--stash-data' wrote that no description has taken yet.")
+
+(defun ai-describe--stash ()
+  "Return the stash directory, creating it if need be.
+Like every directory `make-temp-file' makes, it is readable by the user
+alone."
+  (unless (and ai-describe--stash (file-directory-p ai-describe--stash))
+    (setq ai-describe--stash (make-temp-file "ai-describe-" t))
+    (add-hook 'kill-emacs-hook #'ai-describe--clear-stash))
+  ai-describe--stash)
+
+(defun ai-describe--clear-stash ()
+  "Delete the stash and every image in it."
+  (when ai-describe--stash
+    (ignore-errors (delete-directory ai-describe--stash t))))
 
 (defun ai-describe--stash-data (data type)
   "Write image DATA of image TYPE to a file and return its path.
 
 Images shown from memory rather than from disk -- what EWW does with a
 picture on a web page -- have to be given a file before they can be
-sent.  The file outlives the request on purpose: a follow-up question
-re-sends the image, so it has to stay readable for as long as its chat
-buffer, and the buffer decides when to delete it."
-  (unless (and ai-describe--stash (file-directory-p ai-describe--stash))
-    (setq ai-describe--stash (make-temp-file "ai-describe-" t)))
-  (let ((path (make-temp-file (expand-file-name "img-" ai-describe--stash)
+sent.  The description that takes the file moves it into its own
+directory."
+  (let ((path (make-temp-file (expand-file-name "img-" (ai-describe--stash))
                               nil
                               (format ".%s" (or (cdr (assq type '((jpeg . "jpg")
                                                                   (png . "png")
@@ -211,7 +229,55 @@ buffer, and the buffer decides when to delete it."
         (set-buffer-multibyte nil)
         (insert data)
         (write-region (point-min) (point-max) path nil 'quiet)))
+    (push path ai-describe--stashed)
     path))
+
+(defun ai-describe--extension (mime)
+  "Return the file name extension for image type MIME, or nil.
+Only an extension mailcap maps back to MIME will do, since gptel
+judges the copy by its name."
+  (let ((ext (cadr (split-string mime "/"))))
+    (and ext
+         (string-match-p "\\`[a-z0-9]+\\'" ext)
+         (equal (mailcap-file-name-to-mime-type (concat "image." ext)) mime)
+         ext)))
+
+(defun ai-describe--private-copy (file mime)
+  "Copy FILE, an image of type MIME, into a new directory of its own.
+Return the copy's path.  The directory is readable by the user alone
+and holds nothing else, and the copy is named here, so no part of
+FILE's name reaches a link.  A copy rather than a symbolic link, so
+what is sent is the image as it was when asked about, wherever FILE
+lives.  The copy outlives the request: a follow-up question re-sends
+the image, so the chat buffer decides when to delete it."
+  (let* ((ext (or (ai-describe--extension mime)
+                  (user-error "Cannot tell what kind of image `%s' is" file)))
+         (dir (make-temp-file (expand-file-name "chat-" (ai-describe--stash)) t))
+         (copy (expand-file-name (concat "image." ext) dir)))
+    (condition-case err
+        (progn
+          (if (member file ai-describe--stashed)
+              (progn (rename-file file copy)
+                     (setq ai-describe--stashed (delete file ai-describe--stashed)))
+            (copy-file file copy))
+          ;; The type is only what FILE's name or its sender claims, and a
+          ;; symbolic link named like a picture copies whatever it points at:
+          ;; the copy has to begin as that kind of image does.
+          (unless (ai-describe--image-of-type-p copy ext)
+            (user-error "`%s' is not the image it is named as" file)))
+      (error (delete-directory dir t)
+             (signal (car err) (cdr err))))
+    copy))
+
+(defconst ai-describe--binary-image-types '(png jpeg gif webp tiff heic)
+  "Image types sent, as Emacs tells them from a file's first bytes.
+Text formats such as XPM, PBM and SVG could carry any text along.")
+
+(defun ai-describe--image-of-type-p (file ext)
+  "Return non-nil if FILE begins as an image named with EXT does."
+  (let ((type (image-type-from-file-header file)))
+    (and (memq type ai-describe--binary-image-types)
+         (equal (symbol-name type) (if (equal ext "jpg") "jpeg" ext)))))
 
 (defun ai-describe-display-property-resolver (callback)
   "Claim any image Emacs is displaying under point, and pass it to CALLBACK."
@@ -476,12 +542,101 @@ the link would be sent as the characters spelling it out."
       gptel-default-mode
     'org-mode))
 
-(defun ai-describe--insert-link (file mode)
-  "Insert a link to FILE that gptel will follow in a MODE buffer."
-  (insert (if (eq mode 'org-mode)
-              (format "[[file:%s]]" file)
-            (format "![](%s)" file))
-          "\n\n"))
+(defun ai-describe--link (file mode)
+  "Return a link to FILE that gptel will follow in a MODE buffer.
+FILE is put in the link as it is, so it has to be a name of ours."
+  (if (eq mode 'org-mode)
+      (format "[[file:%s]]" file)
+    (format "![](%s)" file)))
+
+;; Each place a link's syntax can be broken without changing how it reads:
+;; after the bracket closing a link's text, between the brackets opening an Org
+;; link, after the angle bracket opening an autolink, and before the colon
+;; ending a URI scheme, which is all an Org plain link needs.
+(defconst ai-describe--link-syntax
+  (rx (or (seq "]" (group-n 1 (any "[(:")))
+          (seq "[" (group-n 1 "["))
+          (seq "<" (group-n 1 alpha))
+          (seq alpha (group-n 1 ":") (not (any space ?\n)))))
+  "Regexp whose first group starts where a link's syntax can be broken.")
+
+(defun ai-describe--break-links (beg end &optional keep)
+  "Break the syntax of every link between BEG and END.
+Leave alone a link at a position for which KEEP, if given, returns
+non-nil.  The break is a zero-width non-joiner: Org and Markdown no
+longer see a link, a model reads straight past it, and Emacspeak's
+character table speaks it as nothing."
+  (save-excursion
+    (let ((end (copy-marker end)))
+      (goto-char beg)
+      (while (re-search-forward ai-describe--link-syntax end t)
+        (goto-char (match-beginning 1))
+        (unless (and keep (funcall keep (point)))
+          (insert "\u200c")))
+      (set-marker end nil))))
+
+(defun ai-describe--plain-text (text)
+  "Return TEXT with the syntax of every link in it broken."
+  (with-temp-buffer
+    (insert text)
+    (ai-describe--break-links (point-min) (point-max))
+    (buffer-string)))
+
+(declare-function org-escape-code-in-string "org-src" (s))
+
+(defun ai-describe--insert-context (context mode)
+  "Insert CONTEXT in a MODE buffer as plain text, marking up nothing.
+A caption is written by somebody else.  As markup it could hold a link
+to a file of yours, which gptel would send along, or in Org a heading
+whose properties change what gptel does.  So its links are broken, and
+it is quoted as an Org example block or a Markdown fence."
+  (let ((text (ai-describe--plain-text (ai-describe--fold-surrogates context))))
+    (if (eq mode 'org-mode)
+        (progn
+          (require 'org-src)
+          (insert "#+begin_example\n" (org-escape-code-in-string text)
+                  "\n#+end_example\n\n"))
+      (let ((fence (make-string (1+ (max 2 (ai-describe--longest-run ?` text))) ?`)))
+        (insert fence "\n" text "\n" fence "\n\n")))))
+
+(defun ai-describe--longest-run (char text)
+  "Return how many CHAR in a row TEXT has at most."
+  (let ((longest 0)
+        (start 0)
+        (run (regexp-quote (string char))))
+    (while (string-match (concat run "+") text start)
+      (setq longest (max longest (- (match-end 0) (match-beginning 0)))
+            start (match-end 0)))
+    longest))
+
+(defun ai-describe--break-links-but (link)
+  "Break every link the user's turns in this buffer hold but LINK itself.
+Response and tool text, which gptel marks with its `gptel' property and
+follows no link in, is left as it is."
+  (save-excursion
+    (goto-char (point-min))
+    (while (let ((case-fold-search nil))
+             (search-forward link nil t))
+      (put-text-property (match-beginning 0) (point) 'ai-describe-image t)))
+  (ai-describe--break-links
+   (point-min) (point-max)
+   (lambda (pos)
+     (or (get-text-property pos 'ai-describe-image)
+         (get-text-property pos 'gptel)))))
+
+(defun ai-describe--follow-only (file mode)
+  "Make gptel send no file from this MODE buffer but FILE.
+gptel builds each request in a copy of the buffer that keeps only some
+of its settings, `gptel-markdown-validate-link' and
+`gptel-org-validate-link' not among them, and follows links found in
+the copy.  Its prompt transforms do run there, so one breaks every link
+but the exact link to FILE before gptel looks.  A link typed into the
+conversation later is sent as its text."
+  (when (boundp 'gptel-prompt-transform-functions)
+    (let ((link (ai-describe--link file mode)))
+      (add-hook 'gptel-prompt-transform-functions
+                (lambda () (ai-describe--break-links-but link))
+                nil t))))
 
 (defun ai-describe--start (info brief)
   "Ask about the image described by INFO in a fresh chat buffer.
@@ -489,13 +644,14 @@ the link would be sent as the characters spelling it out."
 With BRIEF, ask the short question and leave point where it is; the
 answer is spoken by Emacspeak from wherever you are.  Otherwise ask for
 the full description and move to the chat buffer, which is where a
-follow-up question would be typed."
+follow-up question would be typed.
+
+The chat links to a copy of the image, made by
+`ai-describe--private-copy' and deleted with the buffer, and the
+buffer's `default-directory' is the copy's directory."
   (let* ((file (plist-get info :file))
          (mime (or (mailcap-file-name-to-mime-type file)
                    (user-error "Cannot tell what kind of image `%s' is" file)))
-         (stashed (and ai-describe--stash
-                       (string-prefix-p (file-name-as-directory ai-describe--stash)
-                                        file)))
          (choice (ai-describe--backend-and-model))
          (mode (ai-describe--chat-mode))
          (buffer (get-buffer-create (ai-describe--buffer-name info))))
@@ -504,29 +660,33 @@ follow-up question would be typed."
     (ai-describe--check-model (cdr choice) mime)
     (with-current-buffer buffer
       (funcall mode)
-      ;; Without this gptel sends the link as the text spelling it out, and
-      ;; never opens the file it names.
-      (setq-local gptel-track-media t)
-      (setq-local gptel-system-prompt (ai-describe--system-prompt))
-      ;; Buffer-local, so a follow-up typed here goes to the same place, and
-      ;; switching backends later leaves this conversation where it was.
-      (setq-local gptel-backend (car choice))
-      (setq-local gptel-model (cdr choice))
-      (unless (eq ai-describe-include-reasoning 'gptel)
-        (setq-local gptel-include-reasoning ai-describe-include-reasoning))
-      (when-let* ((context (plist-get info :context)))
-        (insert (ai-describe--fold-surrogates context) "\n\n"))
-      (ai-describe--insert-link file mode)
+      (let ((copy (ai-describe--private-copy file mime)))
+        (add-hook 'kill-buffer-hook
+                  (lambda ()
+                    (ignore-errors (delete-directory (file-name-directory copy) t)))
+                  nil t)
+        ;; gptel resolves a relative link against the `default-directory' its
+        ;; copy of this buffer inherits, which would otherwise be that of the
+        ;; buffer the image came from.  Here it finds only the image.
+        (setq default-directory (file-name-directory copy))
+        ;; Without this gptel sends the link as the text spelling it out, and
+        ;; never opens the file it names.
+        (setq-local gptel-track-media t)
+        (ai-describe--follow-only copy mode)
+        (setq-local gptel-system-prompt (ai-describe--system-prompt))
+        ;; Buffer-local, so a follow-up typed here goes to the same place, and
+        ;; switching backends later leaves this conversation where it was.
+        (setq-local gptel-backend (car choice))
+        (setq-local gptel-model (cdr choice))
+        (unless (eq ai-describe-include-reasoning 'gptel)
+          (setq-local gptel-include-reasoning ai-describe-include-reasoning))
+        (when-let* ((context (plist-get info :context)))
+          (ai-describe--insert-context context mode))
+        (insert (ai-describe--link copy mode) "\n\n"))
       (insert (if brief ai-describe-request-brief ai-describe-request-detailed)
               "\n")
       (gptel-mode)
       (goto-char (point-max))
-      (when stashed
-        ;; The image was pulled out of a buffer and exists only for this
-        ;; conversation, which re-sends it with every follow-up.
-        (add-hook 'kill-buffer-hook
-                  (lambda () (ignore-errors (delete-file file)))
-                  nil t))
       (gptel-send))
     (setq ai-describe--last-buffer buffer)
     (if brief

@@ -486,7 +486,15 @@ Finding the image is the part that needs help. What is displayed is often a
 downscaled thumbnail — telega sizes chat photos to fit — so resolution is a list
 of functions tried in order, each free to claim point and fetch something better
 than what is on screen, and to supply surrounding text: a caption and a channel
-name change what a photo is understood to be.
+name change what a photo is understood to be. That text is written into the
+chat as plain text, with an invisible character that Emacspeak speaks as
+nothing inside the syntax of each link. The image is the only file a
+description sends: the chat links to a copy of it, named by ai-describe and
+kept in a directory of its own until the chat is killed, so nothing in the
+image's own file name can become part of a link, and the copy has to begin as
+the kind of image it is named as. Every other link in the chat is broken the
+same way in the copy gptel sends from, so one in a caption, or one typed into
+the chat later, goes as the text spelling it out.
 
 This module needs neither Emacspeak nor a screen reader, and speaks nothing
 itself — Emacspeak already speaks gptel responses. It keeps its own name rather than
