@@ -491,8 +491,9 @@ chat as plain text, with an invisible character that Emacspeak speaks as
 nothing inside the syntax of each link. The image is the only file a
 description sends: the chat links to a copy of it, named by ai-describe and
 kept in a directory of its own until the chat is killed, so nothing in the
-image's own file name can become part of a link, and the copy has to begin as
-the kind of image it is named as. Every other link in the chat is broken the
+image's own file name can become part of a link. What kind of image it is is
+read from its first bytes, never its name, and nothing but PNG, JPEG, GIF,
+WebP, TIFF or HEIC is sent. Every other link in the chat is broken the
 same way in the copy gptel sends from, so one in a caption, or one typed into
 the chat later, goes as the text spelling it out.
 

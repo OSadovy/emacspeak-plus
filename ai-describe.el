@@ -260,11 +260,9 @@ the image, so the chat buffer decides when to delete it."
               (progn (rename-file file copy)
                      (setq ai-describe--stashed (delete file ai-describe--stashed)))
             (copy-file file copy))
-          ;; The type is only what FILE's name or its sender claims, and a
-          ;; symbolic link named like a picture copies whatever it points at:
-          ;; the copy has to begin as that kind of image does.
-          (unless (ai-describe--image-of-type-p copy ext)
-            (user-error "`%s' is not the image it is named as" file)))
+          ;; FILE may have changed since its type was read.
+          (unless (equal (ai-describe--file-mime copy t) mime)
+            (user-error "`%s' changed while it was being copied" file)))
       (error (delete-directory dir t)
              (signal (car err) (cdr err))))
     copy))
@@ -273,11 +271,18 @@ the image, so the chat buffer decides when to delete it."
   "Image types sent, as Emacs tells them from a file's first bytes.
 Text formats such as XPM, PBM and SVG could carry any text along.")
 
-(defun ai-describe--image-of-type-p (file ext)
-  "Return non-nil if FILE begins as an image named with EXT does."
+(defun ai-describe--file-mime (file &optional quiet)
+  "Return the MIME type of the image FILE holds, read from its first bytes.
+Its name, or what a sender said of it, is not trusted: a name may lack
+an extension or have the wrong one, and a symbolic link named like a
+picture leads to whatever it points at.  Signal a `user-error' unless
+FILE begins as one of `ai-describe--binary-image-types'; with QUIET,
+return nil instead."
   (let ((type (image-type-from-file-header file)))
-    (and (memq type ai-describe--binary-image-types)
-         (equal (symbol-name type) (if (equal ext "jpg") "jpeg" ext)))))
+    (cond ((memq type ai-describe--binary-image-types)
+           (concat "image/" (symbol-name type)))
+          (quiet nil)
+          (t (user-error "`%s' is not a picture that can be described" file)))))
 
 (defun ai-describe-display-property-resolver (callback)
   "Claim any image Emacs is displaying under point, and pass it to CALLBACK."
@@ -650,13 +655,13 @@ The chat links to a copy of the image, made by
 `ai-describe--private-copy' and deleted with the buffer, and the
 buffer's `default-directory' is the copy's directory."
   (let* ((file (plist-get info :file))
-         (mime (or (mailcap-file-name-to-mime-type file)
-                   (user-error "Cannot tell what kind of image `%s' is" file)))
+         (mime (progn
+                 (unless (file-readable-p file)
+                   (user-error "Cannot read the image at `%s'" file))
+                 (ai-describe--file-mime file)))
          (choice (ai-describe--backend-and-model))
          (mode (ai-describe--chat-mode))
          (buffer (get-buffer-create (ai-describe--buffer-name info))))
-    (unless (file-readable-p file)
-      (user-error "Cannot read the image at `%s'" file))
     (ai-describe--check-model (cdr choice) mime)
     (with-current-buffer buffer
       (funcall mode)

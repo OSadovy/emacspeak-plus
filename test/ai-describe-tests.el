@@ -595,10 +595,11 @@ its path and from Dired, and asked about again."
         (kill-buffer buffer))
       (delete-directory dir t))))
 
-(ert-deftest ai-describe-test-image-is-what-it-is-named ()
-  "A file named as a picture is sent only if it begins as one.
+(ert-deftest ai-describe-test-image-is-what-it-holds ()
+  "A file is sent as the picture its first bytes say, whatever its name.
 A symbolic link named photo.png that points at text, and text named
-text.png, are refused, leaving no copy and sending nothing."
+text.png, are refused, leaving no copy and sending nothing.  A PNG
+with no extension, and one named .jpg, are sent as the PNG they are."
   (require 'gptel-org)
   (let* ((dir (file-name-as-directory (make-temp-file "ai-describe-kinds-" t)))
          (default-directory dir)
@@ -611,6 +612,8 @@ text.png, are refused, leaving no copy and sending nothing."
                               (expand-file-name "photo.png" dir))
           (write-region "secret" nil (expand-file-name "text.png" dir) nil 'quiet)
           (copy-file ai-describe-tests--png (expand-file-name "real.png" dir))
+          (copy-file ai-describe-tests--png (expand-file-name "8ca1328a3da3" dir))
+          (copy-file ai-describe-tests--png (expand-file-name "photo.jpg" dir))
           (let ((before (funcall chats))
                 (ai-describe-backend nil)
                 (ai-describe-model 'ai-describe-tests--vision)
@@ -624,16 +627,17 @@ text.png, are refused, leaving no copy and sending nothing."
                                           (list :file (expand-file-name name dir))
                                           nil)
                                          :type 'user-error)))
-                  (should (string-match-p "not the image" (cadr err))))))
+                  (should (string-match-p "not a picture" (cadr err))))))
             (should (zerop requests))
             (should (equal before (funcall chats))))
-          (ai-describe-tests--check-sent
-           'real (ai-describe-tests--sent
-                  'org-mode
-                  (lambda ()
-                    (ai-describe--start (list :file (expand-file-name "real.png" dir))
-                                        nil)))
-           ai-describe-tests--png))
+          (dolist (name '("real.png" "8ca1328a3da3" "photo.jpg"))
+            (ai-describe-tests--check-sent
+             name (ai-describe-tests--sent
+                   'org-mode
+                   (lambda ()
+                     (ai-describe--start (list :file (expand-file-name name dir))
+                                         nil)))
+             ai-describe-tests--png)))
       (delete-directory dir t))))
 
 (ert-deftest ai-describe-test-follows-gptel-default-mode ()
